@@ -1,9 +1,12 @@
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Brain, FileText, CheckCircle, TrendingUp, Upload, Clock } from "lucide-react";
 import heroImage from "@/assets/hero-image.jpg";
 
 const Index = () => {
+  const navigate = useNavigate();
+
   return (
     <div className="min-h-screen bg-background">
       {/* Hero Section */}
@@ -18,7 +21,7 @@ const Index = () => {
                 Upload your syllabus, get personalized study materials, practice with mock tests, and analyze your performance - all in one place.
               </p>
               <div className="flex gap-4">
-                <Button variant="hero" size="lg">Get Started Free</Button>
+                <Button variant="hero" size="lg" onClick={() => navigate("/auth")}>Get Started Free</Button>
                 <Button variant="outline" size="lg" className="bg-white/10 border-white/20 text-primary-foreground hover:bg-white/20">Learn More</Button>
               </div>
             </div>
@@ -108,7 +111,7 @@ const Index = () => {
           </div>
 
           <div className="text-center mt-12">
-            <Button variant="hero" size="lg">Start Your Prep Journey</Button>
+            <Button variant="hero" size="lg" onClick={() => navigate("/auth")}>Start Your Prep Journey</Button>
           </div>
         </div>
       </section>

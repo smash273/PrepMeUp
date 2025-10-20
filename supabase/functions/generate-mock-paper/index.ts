@@ -1,0 +1,121 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const { courseId, title, questionType, totalMarks, duration } = await req.json();
+    
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY")!;
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Get user from auth header
+    const authHeader = req.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    const { data: { user } } = await supabase.auth.getUser(token!);
+
+    if (!user) throw new Error("Unauthorized");
+
+    // Fetch generated content for context
+    const { data: content } = await supabase
+      .from("generated_content")
+      .select("*")
+      .eq("course_id", courseId);
+
+    const numQuestions = questionType === "mcq" ? Math.floor(totalMarks / 1) : Math.floor(totalMarks / 10);
+
+    // Generate questions using Lovable AI
+    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${lovableApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert exam paper creator. Generate ${questionType === "mcq" ? "multiple choice questions with 4 options" : "long answer questions"} based on the course content.`
+          },
+          {
+            role: "user",
+            content: `Generate ${numQuestions} ${questionType === "mcq" ? "MCQ" : "long answer"} questions for a mock test. 
+${questionType === "mcq" ? "Each MCQ should have 4 options with one correct answer." : "Each question should be worth 10 marks."}
+
+Format as JSON:
+{
+  "questions": [
+    {
+      "text": "Question text",
+      ${questionType === "mcq" 
+        ? '"options": [{"text": "Option A", "is_correct": false}], "marks": 1' 
+        : '"answer": "Expected answer outline", "marks": 10'}
+      "concept": "Main concept tested"
+    }
+  ]
+}`
+          }
+        ],
+      }),
+    });
+
+    if (!aiResponse.ok) {
+      throw new Error("Failed to generate questions");
+    }
+
+    const aiData = await aiResponse.json();
+    const questionsData = JSON.parse(aiData.choices[0].message.content);
+
+    // Create mock paper
+    const { data: paper, error: paperError } = await supabase
+      .from("mock_papers")
+      .insert({
+        course_id: courseId,
+        user_id: user.id,
+        title,
+        question_type: questionType,
+        total_marks: totalMarks,
+        duration_minutes: duration,
+      })
+      .select()
+      .single();
+
+    if (paperError) throw paperError;
+
+    // Insert questions
+    for (const q of questionsData.questions) {
+      await supabase.from("questions").insert({
+        mock_paper_id: paper.id,
+        question_text: q.text,
+        question_type: questionType,
+        marks: q.marks,
+        options: questionType === "mcq" ? q.options : null,
+        correct_answer: questionType === "long_answer" ? q.answer : null,
+        concept_tags: [q.concept],
+      });
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, paperId: paper.id }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Error:", error);
+    return new Response(
+      JSON.stringify({ error: (error as Error).message }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});
