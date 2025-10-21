@@ -76,7 +76,12 @@ Format as JSON:
     }
 
     const aiData = await aiResponse.json();
-    const questionsData = JSON.parse(aiData.choices[0].message.content);
+    let rawContent = aiData.choices[0].message.content;
+    
+    // Strip markdown code blocks if present
+    rawContent = rawContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    
+    const questionsData = JSON.parse(rawContent);
 
     // Create mock paper
     const { data: paper, error: paperError } = await supabase

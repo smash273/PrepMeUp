@@ -88,7 +88,12 @@ Format the response as JSON with this structure:
     }
 
     const aiData = await aiResponse.json();
-    const content = JSON.parse(aiData.choices[0].message.content);
+    let rawContent = aiData.choices[0].message.content;
+    
+    // Strip markdown code blocks if present
+    rawContent = rawContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    
+    const content = JSON.parse(rawContent);
 
     // Get user from auth header
     const authHeader = req.headers.get("authorization");
