@@ -35,7 +35,7 @@ serve(async (req) => {
       );
     }
 
-    // Extract syllabus content (in a real app, you'd read the file content)
+    // Extract syllabus content
     const syllabusFile = materials.find((m) => m.resource_type === "syllabus");
     if (!syllabusFile) {
       return new Response(
@@ -43,6 +43,22 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Download syllabus file from storage to read its content
+    const { data: syllabusBlob, error: downloadError } = await supabase.storage
+      .from("syllabus")
+      .download(syllabusFile.file_path.split("/").pop()!);
+
+    if (downloadError) {
+      console.error("Error downloading syllabus:", downloadError);
+      return new Response(
+        JSON.stringify({ error: "Failed to download syllabus" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Read syllabus content
+    const syllabusText = await syllabusBlob.text();
 
     // Generate content using Lovable AI
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -56,23 +72,58 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: "You are an expert educator creating study materials. Generate comprehensive summaries, mindmaps, and acronyms for easy memorization."
+            content: "You are an expert educator creating study materials. Generate comprehensive, detailed study content strictly based ONLY on the provided syllabus. Cover ALL topics and subtopics mentioned in the syllabus with detailed bullet points. Create colorful, well-structured mindmaps for EACH module that visually represent the relationships between concepts."
           },
           {
             role: "user",
-            content: `Based on a course syllabus, generate study content for 3 major modules/topics. For each module, create:
-1. A comprehensive summary (3-4 paragraphs)
-2. A structured mindmap (key concepts and relationships)
-3. Helpful acronyms for memorization
+            content: `Based on this exact syllabus, generate detailed study content for ALL modules/topics mentioned:
 
-Format the response as JSON with this structure:
+SYLLABUS:
+${syllabusText}
+
+IMPORTANT INSTRUCTIONS:
+1. Create content for EVERY module/topic in the syllabus
+2. Summaries MUST be in detailed bullet points covering ALL major and minor topics
+3. Include 8-15 bullet points per module covering key concepts, definitions, applications, and examples
+4. Create a colorful, hierarchical mindmap for EACH module with:
+   - Central topic (use emoji or icon)
+   - Main branches for major topics (assign different colors)
+   - Sub-branches for subtopics
+   - Clear visual relationships
+5. Generate helpful acronyms for key concepts in each module
+6. Stay strictly within the syllabus content - do not add external information
+
+Format the response as JSON with this exact structure:
 {
   "modules": [
     {
-      "name": "Module Name",
-      "summary": "Summary text",
-      "mindmap": {"central": "topic", "branches": [...]},
-      "acronyms": [{"acronym": "ABC", "meaning": "Always Be Coding"}]
+      "name": "Module Name (as per syllabus)",
+      "summary": [
+        "• Detailed bullet point 1",
+        "• Detailed bullet point 2",
+        "• Continue for 8-15 points..."
+      ],
+      "mindmap": {
+        "central": "🎯 Central Topic",
+        "branches": [
+          {
+            "name": "Main Branch 1",
+            "color": "#FF6B6B",
+            "subbranches": [
+              "Subtopic 1",
+              "Subtopic 2"
+            ]
+          },
+          {
+            "name": "Main Branch 2", 
+            "color": "#4ECDC4",
+            "subbranches": ["Subtopic 1"]
+          }
+        ]
+      },
+      "acronyms": [
+        {"acronym": "ABC", "meaning": "Actual Meaning from Syllabus"}
+      ]
     }
   ]
 }`
