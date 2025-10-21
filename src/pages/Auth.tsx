@@ -17,19 +17,36 @@ export default function Auth() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  // Only allow @vitstudent.ac.in emails (case-insensitive)
+  const VIT_EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$/i;
+  const normalizeEmail = (value: string) => value.trim().toLowerCase();
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
+    const normalizedEmail = normalizeEmail(email);
+
+    // Client-side guard for both login and signup
+    if (!VIT_EMAIL_REGEX.test(normalizedEmail)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid email domain",
+        description: "Please use your VIT student email (…@vitstudent.ac.in).",
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         });
-        
+
         if (error) throw error;
-        
+
         toast({
           title: "Welcome back!",
           description: "You've successfully logged in.",
@@ -37,7 +54,7 @@ export default function Auth() {
         navigate("/dashboard");
       } else {
         const { error } = await supabase.auth.signUp({
-          email,
+          email: normalizedEmail,
           password,
           options: {
             data: {
@@ -46,9 +63,9 @@ export default function Auth() {
             emailRedirectTo: `${window.location.origin}/dashboard`,
           },
         });
-        
+
         if (error) throw error;
-        
+
         toast({
           title: "Account created!",
           description: "Welcome to PrepMeUp. Redirecting to dashboard...",
@@ -98,9 +115,16 @@ export default function Auth() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onBlur={(e) => setEmail(normalizeEmail(e.target.value))}
               required
-              placeholder="Enter your email"
+              placeholder="yourname@vitstudent.ac.in"
+              pattern="^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$"
+              title="Use your VIT student email (…@vitstudent.ac.in)"
+              autoComplete="email"
             />
+            <p className="text-xs text-muted-foreground">
+              Only VIT student emails are allowed.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -113,6 +137,7 @@ export default function Auth() {
               required
               placeholder="Enter your password"
               minLength={6}
+              autoComplete={isLogin ? "current-password" : "new-password"}
             />
           </div>
 
