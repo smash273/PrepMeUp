@@ -155,13 +155,13 @@ Format the response as JSON with this exact structure:
 
     // Store generated content
     for (const module of content.modules) {
-      // Store summary
+      // Store summary as array of bullet points
       await supabase.from("generated_content").insert({
         course_id: courseId,
         user_id: user.id,
         module_name: module.name,
         content_type: "summary",
-        content: { text: module.summary },
+        content: module.summary, // Already an array of strings
       });
 
       // Store mindmap

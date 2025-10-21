@@ -412,6 +412,44 @@ export type Database = {
           },
         ]
       }
+      user_test_attempts: {
+        Row: {
+          answers: Json
+          created_at: string
+          id: string
+          mock_paper_id: string
+          time_taken: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          answers?: Json
+          created_at?: string
+          id?: string
+          mock_paper_id: string
+          time_taken?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          answers?: Json
+          created_at?: string
+          id?: string
+          mock_paper_id?: string
+          time_taken?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_test_attempts_mock_paper_id_fkey"
+            columns: ["mock_paper_id"]
+            isOneToOne: false
+            referencedRelation: "mock_papers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
