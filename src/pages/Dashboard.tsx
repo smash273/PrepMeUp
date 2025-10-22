@@ -81,15 +81,15 @@ export default function Dashboard() {
             </p>
           </Card>
 
-          <Card className="p-6 hover:shadow-glow transition-all cursor-pointer" onClick={() => navigate("/pre-exam")}>
+          <Card className="p-6 hover:shadow-glow transition-all cursor-pointer" onClick={() => navigate("/courses")}>
             <FileText className="h-12 w-12 text-accent mb-4" />
-            <h3 className="font-semibold text-lg mb-2">Pre-Exam Prep</h3>
+            <h3 className="font-semibold text-lg mb-2">Study Content</h3>
             <p className="text-sm text-muted-foreground">
-              Study materials & mock tests
+              AI-generated summaries & mindmaps
             </p>
           </Card>
 
-          <Card className="p-6 hover:shadow-glow transition-all cursor-pointer" onClick={() => navigate("/mock-tests")}>
+          <Card className="p-6 hover:shadow-glow transition-all cursor-pointer" onClick={() => navigate("/courses")}>
             <Target className="h-12 w-12 text-success mb-4" />
             <h3 className="font-semibold text-lg mb-2">Mock Tests</h3>
             <p className="text-sm text-muted-foreground">

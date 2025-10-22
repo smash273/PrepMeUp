@@ -1,1 +1,10 @@
 project_id = "xqmnycilpyluuthanhdt"
+
+[functions.generate-study-content]
+verify_jwt = true
+
+[functions.generate-mock-paper]
+verify_jwt = true
+
+[functions.evaluate-answer-sheet]
+verify_jwt = true
