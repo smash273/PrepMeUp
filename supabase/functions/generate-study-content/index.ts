@@ -111,9 +111,8 @@ serve(async (req) => {
     // --- Call Lovable AI ---
     console.log(`Syllabus length for AI call: ${syllabusText.length} characters.`);
     
-    const payload = {
+      const payload = {
       model: "google/gemini-2.5-flash",
-      temperature: 0.2,
       messages: [
         {
           role: "system",
@@ -122,40 +121,66 @@ serve(async (req) => {
         },
         {
           role: "user",
-          content: `Based on this exact syllabus, generate detailed study content for ALL modules/topics mentioned:
+          content: `You are an expert educator creating comprehensive study materials. Analyze this syllabus carefully and generate detailed study content that strictly follows it.
 
-SYLLABUS:
+SYLLABUS CONTENT:
 ${syllabusText}
 
-IMPORTANT INSTRUCTIONS:
-1. Create content for EVERY module/topic in the syllabus
-2. Summaries MUST be in detailed bullet points covering ALL major and minor topics (8-15 points per module)
-3. Create a colorful, hierarchical mindmap structure for EACH module (central, main branches, sub-branches with unique colors)
-4. Generate helpful acronyms for key concepts in each module (list of objects)
-5. Stay strictly within the syllabus content - do not add external information
+YOUR TASK:
+1. Identify ALL modules/units/topics mentioned in the syllabus
+2. For EACH module, create:
+   - Comprehensive bullet-point summary covering ALL subtopics (10-20 detailed points per module)
+   - A colorful, hierarchical mindmap with central topic, main branches, and sub-branches
+   - Helpful acronyms for memorizing key concepts
 
-Format the response as a single, valid JSON object with the exact structure described below (do not include any surrounding text or markdown fences, ONLY the JSON):
+CRITICAL REQUIREMENTS:
+- Stay 100% within syllabus scope - DO NOT add external topics
+- Every major and minor topic from the syllabus MUST be covered
+- Bullet points should be detailed explanations, not just topic names
+- Each module MUST have its own complete mindmap with multiple branches
+- Use diverse, vibrant colors for mindmap branches (#FF6B6B, #4ECDC4, #95E1D3, #FFA500, #9D50BB, #FF69B4, #32CD32, #FFD700)
+- Each mindmap should have 4-8 main branches with 2-5 subbranches each
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON object (no markdown, no code blocks, no extra text):
 {
   "modules": [
     {
-      "name": "Module Name (as per syllabus)",
+      "name": "Module 1 - Exact Name from Syllabus",
       "summary": [
-        "• Detailed bullet point 1",
-        "• Detailed bullet point 2"
+        "• First major concept: detailed explanation covering key aspects and importance",
+        "• Second major concept: comprehensive coverage of subtopics and relationships",
+        "• Third concept: in-depth description with examples and applications",
+        "... (10-20 detailed bullet points covering ALL topics)"
       ],
       "mindmap": {
-        "central": "🎯 Central Topic",
+        "central": "🎯 Module 1 Core Topic",
         "branches": [
           {
             "name": "Main Branch 1",
             "color": "#FF6B6B",
-            "subbranches": ["Subtopic 1", "Subtopic 2"]
+            "subbranches": ["Subtopic 1.1", "Subtopic 1.2", "Subtopic 1.3"]
           },
-          // ... more branches
+          {
+            "name": "Main Branch 2",
+            "color": "#4ECDC4",
+            "subbranches": ["Subtopic 2.1", "Subtopic 2.2", "Subtopic 2.3"]
+          },
+          {
+            "name": "Main Branch 3",
+            "color": "#FFA500",
+            "subbranches": ["Subtopic 3.1", "Subtopic 3.2"]
+          },
+          {
+            "name": "Main Branch 4",
+            "color": "#9D50BB",
+            "subbranches": ["Subtopic 4.1", "Subtopic 4.2", "Subtopic 4.3"]
+          }
         ]
       },
       "acronyms": [
-        {"acronym": "ABC", "meaning": "Actual Meaning from Syllabus"}
+        {"acronym": "SMART", "meaning": "Specific, Measurable, Achievable, Relevant, Time-bound"},
+        {"acronym": "ACID", "meaning": "Atomicity, Consistency, Isolation, Durability"}
       ]
     }
   ]
@@ -175,9 +200,10 @@ Format the response as a single, valid JSON object with the exact structure desc
 
     if (!aiResponse.ok) {
       const detail = await aiResponse.text().catch(() => "N/A");
-      console.error(`AI API Error: Status ${aiResponse.status}. Details: ${detail.slice(0, 200)}`);
-      // Return 502 (Bad Gateway) since the failure is from the upstream AI provider
-      return json({ error: `AI provider error (Status ${aiResponse.status}). Check logs for details.` }, 502);
+      console.error(`AI API Error: Status ${aiResponse.status}. Details: ${detail}`);
+      return json({ 
+        error: `AI service error (${aiResponse.status}). ${aiResponse.status === 429 ? 'Rate limit exceeded. Please try again in a moment.' : 'Please try again.'}` 
+      }, 502);
     }
 
     const aiData = await aiResponse.json();
@@ -197,8 +223,8 @@ Format the response as a single, valid JSON object with the exact structure desc
     try {
       content = JSON.parse(rawContent);
     } catch (e) {
-      console.error(`JSON parse failed. Error: ${e}. Raw begins: ${rawContent.slice(0, 500)}`);
-      return json({ error: "AI output is not valid JSON." }, 502);
+      console.error(`JSON parse failed. Error: ${e}. Raw content: ${rawContent}`);
+      return json({ error: "AI output is not valid JSON. Please try again." }, 502);
     }
 
     if (!Array.isArray(content.modules)) {

@@ -33,6 +33,18 @@ serve(async (req) => {
       .select("*")
       .eq("course_id", courseId);
 
+    if (!content || content.length === 0) {
+      throw new Error("No study content found. Please generate study materials first.");
+    }
+
+    // Format content for AI context
+    const contentContext = content.map(c => {
+      if (c.content_type === "summary") {
+        return `Module: ${c.module_name}\nSummary:\n${(c.content as string[]).join('\n')}`;
+      }
+      return `Module: ${c.module_name}`;
+    }).join('\n\n');
+
     const numQuestions = questionType === "mcq" ? Math.floor(totalMarks / 1) : Math.floor(totalMarks / 10);
 
     // Generate questions using Lovable AI
@@ -47,22 +59,31 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You are an expert exam paper creator. Generate ${questionType === "mcq" ? "multiple choice questions with 4 options" : "long answer questions"} based on the course content.`
+            content: `You are an expert exam paper creator. Generate ${questionType === "mcq" ? "multiple choice questions with 4 options" : "long answer questions"} STRICTLY based on the provided course content. Do not add questions from outside the given material.`
           },
           {
             role: "user",
-            content: `Generate ${numQuestions} ${questionType === "mcq" ? "MCQ" : "long answer"} questions for a mock test. 
-${questionType === "mcq" ? "Each MCQ should have 4 options with one correct answer." : "Each question should be worth 10 marks."}
+            content: `Based ONLY on the following course content, generate ${numQuestions} ${questionType === "mcq" ? "MCQ" : "long answer"} questions for a mock exam.
 
-Format as JSON:
+COURSE CONTENT:
+${contentContext}
+
+REQUIREMENTS:
+- Generate EXACTLY ${numQuestions} questions
+- ${questionType === "mcq" ? "Each MCQ must have 4 options with only one correct answer" : "Each question should be worth 10 marks"}
+- Questions must cover different modules proportionally
+- Questions should test understanding, not just recall
+- Stay STRICTLY within the provided content
+
+Format as valid JSON (no markdown, no code blocks):
 {
   "questions": [
     {
       "text": "Question text",
       ${questionType === "mcq" 
-        ? '"options": [{"text": "Option A", "is_correct": false}], "marks": 1' 
-        : '"answer": "Expected answer outline", "marks": 10'}
-      "concept": "Main concept tested"
+        ? '"options": [{"text": "Option A", "is_correct": false}, {"text": "Option B", "is_correct": true}, {"text": "Option C", "is_correct": false}, {"text": "Option D", "is_correct": false}], "marks": 1' 
+        : '"answer": "Expected answer outline", "marks": 10'},
+      "concept": "Main concept/module tested"
     }
   ]
 }`
@@ -72,7 +93,9 @@ Format as JSON:
     });
 
     if (!aiResponse.ok) {
-      throw new Error("Failed to generate questions");
+      const errorText = await aiResponse.text().catch(() => "Unknown error");
+      console.error(`AI API Error: Status ${aiResponse.status}, Response: ${errorText}`);
+      throw new Error(`Failed to generate questions: ${aiResponse.status === 429 ? 'Rate limit exceeded' : 'AI service error'}`);
     }
 
     const aiData = await aiResponse.json();
