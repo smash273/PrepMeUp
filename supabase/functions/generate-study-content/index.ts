@@ -101,92 +101,60 @@ serve(async (req) => {
 
     if (downloadError) {
       console.error("Error downloading syllabus:", downloadError);
-      // This is a common 404/403 failure, usually RLS or bad key.
       return json({ error: `Failed to download syllabus from storage. Check RLS policies or file path. (${downloadError.message})` }, 404);
     }
 
-    const syllabusText = await syllabusBlob.text();
-    if (syllabusText.length < 50) return json({ error: "Syllabus content is too short or empty after download." }, 400);
-
-    // --- Call Lovable AI ---
-    console.log(`Syllabus length for AI call: ${syllabusText.length} characters.`);
+    // Convert PDF to base64 for AI vision processing
+    const arrayBuffer = await syllabusBlob.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    const base64Pdf = btoa(String.fromCharCode.apply(null, Array.from(uint8Array)));
     
-      const payload = {
-      model: "google/gemini-2.5-flash",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are an expert educator creating study materials. Generate comprehensive, detailed study content strictly based ONLY on the provided syllabus. Cover ALL topics and subtopics mentioned in the syllabus with detailed bullet points, a mindmap structure, and acronyms.",
-        },
-        {
-          role: "user",
-          content: `You are an expert educator creating comprehensive study materials. Analyze this syllabus carefully and generate detailed study content that strictly follows it.
+    console.log(`PDF file prepared for AI analysis (${arrayBuffer.byteLength} bytes)...`);
+    
+    // --- Call Lovable AI with PDF Document ---
+    const systemPrompt = "You are an expert educator. Extract the ACTUAL course content from the syllabus PDF (modules, topics, subtopics) and generate comprehensive study materials. IGNORE PDF metadata/structure.";
+    
+    const userPrompt = `Analyze this syllabus PDF and create detailed study content for EACH module found:
 
-SYLLABUS CONTENT:
-${syllabusText}
+REQUIREMENTS:
+- Extract actual course modules/topics from the PDF (NOT PDF structure)
+- Create 10-20 detailed bullet points per module
+- Generate colorful mindmaps (4-8 branches with subbranches)
+- Include helpful acronyms
 
-YOUR TASK:
-1. Identify ALL modules/units/topics mentioned in the syllabus
-2. For EACH module, create:
-   - Comprehensive bullet-point summary covering ALL subtopics (10-20 detailed points per module)
-   - A colorful, hierarchical mindmap with central topic, main branches, and sub-branches
-   - Helpful acronyms for memorizing key concepts
-
-CRITICAL REQUIREMENTS:
-- Stay 100% within syllabus scope - DO NOT add external topics
-- Every major and minor topic from the syllabus MUST be covered
-- Bullet points should be detailed explanations, not just topic names
-- Each module MUST have its own complete mindmap with multiple branches
-- Use diverse, vibrant colors for mindmap branches (#FF6B6B, #4ECDC4, #95E1D3, #FFA500, #9D50BB, #FF69B4, #32CD32, #FFD700)
-- Each mindmap should have 4-8 main branches with 2-5 subbranches each
-
-OUTPUT FORMAT:
-Return ONLY a valid JSON object (no markdown, no code blocks, no extra text):
+Return ONLY valid JSON:
 {
   "modules": [
     {
-      "name": "Module 1 - Exact Name from Syllabus",
-      "summary": [
-        "• First major concept: detailed explanation covering key aspects and importance",
-        "• Second major concept: comprehensive coverage of subtopics and relationships",
-        "• Third concept: in-depth description with examples and applications",
-        "... (10-20 detailed bullet points covering ALL topics)"
-      ],
+      "name": "Module Name from PDF",
+      "summary": ["• Detailed point 1", "• Detailed point 2", ...],
       "mindmap": {
-        "central": "🎯 Module 1 Core Topic",
+        "central": "Core Topic",
         "branches": [
-          {
-            "name": "Main Branch 1",
-            "color": "#FF6B6B",
-            "subbranches": ["Subtopic 1.1", "Subtopic 1.2", "Subtopic 1.3"]
-          },
-          {
-            "name": "Main Branch 2",
-            "color": "#4ECDC4",
-            "subbranches": ["Subtopic 2.1", "Subtopic 2.2", "Subtopic 2.3"]
-          },
-          {
-            "name": "Main Branch 3",
-            "color": "#FFA500",
-            "subbranches": ["Subtopic 3.1", "Subtopic 3.2"]
-          },
-          {
-            "name": "Main Branch 4",
-            "color": "#9D50BB",
-            "subbranches": ["Subtopic 4.1", "Subtopic 4.2", "Subtopic 4.3"]
-          }
+          {"name": "Branch 1", "color": "#FF6B6B", "subbranches": ["Sub 1.1", "Sub 1.2"]},
+          {"name": "Branch 2", "color": "#4ECDC4", "subbranches": ["Sub 2.1", "Sub 2.2"]}
         ]
       },
-      "acronyms": [
-        {"acronym": "SMART", "meaning": "Specific, Measurable, Achievable, Relevant, Time-bound"},
-        {"acronym": "ACID", "meaning": "Atomicity, Consistency, Isolation, Durability"}
-      ]
+      "acronyms": [{"acronym": "ABC", "meaning": "Full meaning"}]
     }
   ]
-}`,
-        },
-      ],
+}`;
+
+    const payload: any = {
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: userPrompt },
+            {
+              type: "image_url",
+              image_url: { url: `data:application/pdf;base64,${base64Pdf}` }
+            }
+          ]
+        }
+      ]
     };
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
