@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encode as encodeBase64 } from "https://deno.land/std@0.168.0/encoding/base64.ts";
+import "https://deno.land/x/xhr@0.1.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,6 +36,28 @@ function extractStorageKey(input: string) {
   } catch {
     return input.replace(/^syllabus\//, "");
   }
+}
+
+
+// PDF text extraction helper function
+async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
+  const pdfjsLib = await import("https://esm.sh/pdfjs-dist@3.11.174/build/pdf.mjs");
+  try {
+    // @ts-ignore - pdfjs types not available in Deno
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.mjs";
+  } catch {}
+  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+  const pdf = await loadingTask.promise;
+  let text = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = (content.items as any[])
+      .map((item) => (item && (item as any).str) ? (item as any).str : "")
+      .join(" ");
+    text += pageText + "\n";
+  }
+  return text;
 }
 
 serve(async (req) => {
@@ -111,22 +134,33 @@ serve(async (req) => {
     const base64Pdf = encodeBase64(arrayBuffer);
     console.log(`PDF file prepared for AI analysis (${arrayBuffer.byteLength} bytes)...`);
 
-    // --- Call Lovable AI with PDF Document ---
-    const systemPrompt = "You are an expert educator. Extract the ACTUAL course content from the syllabus PDF (modules, topics, subtopics) and generate comprehensive study materials. IGNORE PDF metadata/structure.";
-    
-    const userPrompt = `Analyze this syllabus PDF and create detailed study content for EACH module found:
+    // Extract text from PDF instead of sending as image to AI
+    let syllabusText = "";
+    try {
+      syllabusText = await extractPdfText(arrayBuffer);
+    } catch (e) {
+      console.error("PDF text extraction failed:", e);
+    }
+
+    if (!syllabusText || syllabusText.trim().length < 50) {
+      return json({ error: "Failed to extract text from the syllabus PDF. Please ensure it's a text-based PDF (not a scanned image) and try again." }, 422);
+    }
+
+    const systemPrompt = "You are an expert educator. Extract the ACTUAL course content from the syllabus TEXT (modules, topics, subtopics) and generate comprehensive study materials. IGNORE metadata/boilerplate.";
+
+    const userPrompt = `Analyze the syllabus text below and create detailed study content for EACH module found.
 
 REQUIREMENTS:
-- Extract actual course modules/topics from the PDF (NOT PDF structure)
+- Extract actual course modules/topics from the syllabus (NOT PDF structure)
 - Create 10-20 detailed bullet points per module
-- Generate colorful mindmaps (4-8 branches with subbranches)
+- Generate colorful mindmaps (4-8 branches with 2-5 subbranches each)
 - Include helpful acronyms
 
-Return ONLY valid JSON:
+Return ONLY valid JSON with this shape:
 {
   "modules": [
     {
-      "name": "Module Name from PDF",
+      "name": "Module Name from Syllabus",
       "summary": ["• Detailed point 1", "• Detailed point 2", ...],
       "mindmap": {
         "central": "Core Topic",
@@ -138,7 +172,8 @@ Return ONLY valid JSON:
       "acronyms": [{"acronym": "ABC", "meaning": "Full meaning"}]
     }
   ]
-}`;
+}
+`;
 
     const payload: any = {
       model: "google/gemini-2.5-flash",
@@ -146,13 +181,7 @@ Return ONLY valid JSON:
         { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: [
-            { type: "text", text: userPrompt },
-            {
-              type: "image_url",
-              image_url: { url: `data:application/pdf;base64,${base64Pdf}` }
-            }
-          ]
+          content: `${userPrompt}\n\nSYLLABUS TEXT (truncated to fit model limits):\n${syllabusText.slice(0, 60000)}`
         }
       ]
     };
