@@ -41,19 +41,30 @@ function extractStorageKey(input: string) {
 
 // PDF text extraction helper function
 async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
-  const pdfjsLib = await import("https://esm.sh/pdfjs-dist@3.11.174/build/pdf.mjs");
+  // Use legacy build and support both named and default exports
+  const pdfjsModule: any = await import("https://esm.sh/pdfjs-dist@3.11.174/legacy/build/pdf.mjs");
+  const getDocument = pdfjsModule.getDocument ?? pdfjsModule.default?.getDocument;
+  const GlobalWorkerOptions = pdfjsModule.GlobalWorkerOptions ?? pdfjsModule.default?.GlobalWorkerOptions;
+
   try {
-    // @ts-ignore - pdfjs types not available in Deno
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@3.11.174/build/pdf.worker.mjs";
+    if (GlobalWorkerOptions) {
+      // @ts-ignore - pdfjs types not available in Deno
+      GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@3.11.174/legacy/build/pdf.worker.mjs";
+    }
   } catch {}
-  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+
+  if (typeof getDocument !== "function") {
+    throw new Error("pdfjs getDocument not available");
+  }
+
+  const loadingTask = getDocument({ data: new Uint8Array(arrayBuffer) });
   const pdf = await loadingTask.promise;
   let text = "";
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const pageText = (content.items as any[])
-      .map((item) => (item && (item as any).str) ? (item as any).str : "")
+      .map((item: any) => (item && item.str) ? item.str : "")
       .join(" ");
     text += pageText + "\n";
   }
