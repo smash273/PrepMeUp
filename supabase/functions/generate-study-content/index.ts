@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encode as encodeBase64 } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -106,11 +107,10 @@ serve(async (req) => {
 
     // Convert PDF to base64 for AI vision processing
     const arrayBuffer = await syllabusBlob.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-    const base64Pdf = btoa(String.fromCharCode.apply(null, Array.from(uint8Array)));
-    
+    // Safe base64 encoding without call stack issues
+    const base64Pdf = encodeBase64(arrayBuffer);
     console.log(`PDF file prepared for AI analysis (${arrayBuffer.byteLength} bytes)...`);
-    
+
     // --- Call Lovable AI with PDF Document ---
     const systemPrompt = "You are an expert educator. Extract the ACTUAL course content from the syllabus PDF (modules, topics, subtopics) and generate comprehensive study materials. IGNORE PDF metadata/structure.";
     
