@@ -41,34 +41,76 @@ function extractStorageKey(input: string) {
 
 // PDF text extraction helper function
 async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
-  // Use legacy build and support both named and default exports
-  const pdfjsModule: any = await import("https://esm.sh/pdfjs-dist@3.11.174/legacy/build/pdf.mjs");
-  const getDocument = pdfjsModule.getDocument ?? pdfjsModule.default?.getDocument;
-  const GlobalWorkerOptions = pdfjsModule.GlobalWorkerOptions ?? pdfjsModule.default?.GlobalWorkerOptions;
-
+  // 1) Try robust extraction with pdfjs (may fail in edge runtimes without DOM/workers)
   try {
-    if (GlobalWorkerOptions) {
-      // @ts-ignore - pdfjs types not available in Deno
-      GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@3.11.174/legacy/build/pdf.worker.mjs";
+    const pdfjsModule: any = await import("https://esm.sh/pdfjs-dist@3.11.174/legacy/build/pdf.mjs");
+    const getDocument = pdfjsModule.getDocument ?? pdfjsModule.default?.getDocument;
+    const GlobalWorkerOptions = pdfjsModule.GlobalWorkerOptions ?? pdfjsModule.default?.GlobalWorkerOptions;
+
+    try {
+      if (GlobalWorkerOptions) {
+        // @ts-ignore - pdfjs types not available in Deno
+        GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@3.11.174/legacy/build/pdf.worker.mjs";
+      }
+    } catch {}
+
+    if (typeof getDocument !== "function") throw new Error("pdfjs getDocument not available");
+
+    const loadingTask = getDocument({ data: new Uint8Array(arrayBuffer) });
+    const pdf = await loadingTask.promise;
+    let text = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = (content.items as any[])
+        .map((item: any) => (item && item.str) ? item.str : "")
+        .join(" ");
+      text += pageText + "\n";
     }
-  } catch {}
-
-  if (typeof getDocument !== "function") {
-    throw new Error("pdfjs getDocument not available");
+    if (text.trim().length > 0) return text;
+  } catch (err) {
+    console.error("pdfjs extraction failed; falling back to lightweight parser:", err);
   }
 
-  const loadingTask = getDocument({ data: new Uint8Array(arrayBuffer) });
-  const pdf = await loadingTask.promise;
-  let text = "";
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = (content.items as any[])
-      .map((item: any) => (item && item.str) ? item.str : "")
+  // 2) Fallback: lightweight parser that extracts strings around Tj/TJ operators without DOM/Workers
+  try {
+    const raw = new TextDecoder("latin1").decode(new Uint8Array(arrayBuffer));
+    const out: string[] = [];
+
+    // Match `(text) Tj`
+    const tjRegex = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*Tj/g;
+    let m: RegExpExecArray | null;
+    while ((m = tjRegex.exec(raw)) !== null) {
+      out.push(m[1]);
+    }
+
+    // Match `[(...)(...)] TJ`
+    const tjArrRegex = /\[(.*?)\]\s*TJ/gms;
+    let ma: RegExpExecArray | null;
+    while ((ma = tjArrRegex.exec(raw)) !== null) {
+      const inner = ma[1];
+      const innerRegex = /\(([^)\\]*(?:\\.[^)\\]*)*)\)/g;
+      let mi: RegExpExecArray | null;
+      while ((mi = innerRegex.exec(inner)) !== null) {
+        out.push(mi[1]);
+      }
+    }
+
+    const cleaned = out
+      .map((s) => s
+        .replace(/\\\)/g, ")")
+        .replace(/\\\(/g, "(")
+        .replace(/\\n/g, " ")
+        .replace(/\\r/g, " ")
+        .replace(/\\t/g, " ")
+        .replace(/\\f/g, " "))
       .join(" ");
-    text += pageText + "\n";
+
+    return cleaned;
+  } catch (e) {
+    console.error("Lightweight PDF text extraction fallback failed:", e);
+    return "";
   }
-  return text;
 }
 
 serve(async (req) => {
@@ -153,8 +195,9 @@ serve(async (req) => {
       console.error("PDF text extraction failed:", e);
     }
 
-    if (!syllabusText || syllabusText.trim().length < 50) {
-      return json({ error: "Failed to extract text from the syllabus PDF. Please ensure it's a text-based PDF (not a scanned image) and try again." }, 422);
+    if (!syllabusText || syllabusText.trim().length < 20) {
+      console.error("Syllabus PDF text insufficient. Length:", syllabusText?.length || 0);
+      return json({ error: "Could not read the syllabus file text. Please upload a text-based PDF or try another file." }, 422);
     }
 
     const systemPrompt = "You are an expert educator. Extract the ACTUAL course content from the syllabus TEXT (modules, topics, subtopics) and generate comprehensive study materials. IGNORE metadata/boilerplate.";

@@ -69,10 +69,13 @@ export default function MockPapers({ courseId }: MockPapersProps) {
       setTitle("");
       fetchPapers();
     } catch (error: any) {
+      const msg = error?.message || "Something went wrong.";
       toast({
         variant: "destructive",
         title: "Generation failed",
-        description: error.message,
+        description: msg.includes("No study content")
+          ? "Please generate study materials first (Upload > Generate Study Content), then try again."
+          : msg,
       });
     } finally {
       setGenerating(false);
