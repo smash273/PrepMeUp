@@ -39,8 +39,76 @@ function extractStorageKey(input: string) {
 }
 
 
-// PDF text extraction helper function
+// PDF text extraction helper function (robust: pdfjs -> FlateDecode -> raw operators)
 async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
+  // Utility: collect text from Tj/TJ operators (() and <> forms)
+  const collectTjText = (src: string) => {
+    const out: string[] = [];
+
+    // (text) Tj
+    const tjRegex = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*Tj/g;
+    let m: RegExpExecArray | null;
+    while ((m = tjRegex.exec(src)) !== null) out.push(m[1]);
+
+    // [(...)(...)] TJ
+    const tjArrRegex = /\[(.*?)\]\s*TJ/gms;
+    let ma: RegExpExecArray | null;
+    while ((ma = tjArrRegex.exec(src)) !== null) {
+      const inner = ma[1];
+      const innerRegex = /\(([^)\\]*(?:\\.[^)\\]*)*)\)/g;
+      let mi: RegExpExecArray | null;
+      while ((mi = innerRegex.exec(inner)) !== null) out.push(mi[1]);
+    }
+
+    // <48656c6c6f> Tj (hex)
+    const hexTj = /<([0-9A-Fa-f\s]+)>\s*Tj/g;
+    let mh: RegExpExecArray | null;
+    while ((mh = hexTj.exec(src)) !== null) {
+      out.push(hexToString(mh[1]));
+    }
+
+    // [<...><...>] TJ (hex array)
+    const hexTjArr = /\[((?:<[^>]+>\s*)+)\]\s*TJ/gm;
+    let mha: RegExpExecArray | null;
+    while ((mha = hexTjArr.exec(src)) !== null) {
+      const seq = mha[1];
+      const eachHex = /<([^>]+)>/g;
+      let mh2: RegExpExecArray | null;
+      while ((mh2 = eachHex.exec(seq)) !== null) out.push(hexToString(mh2[1]));
+    }
+
+    // Clean escapes in () strings
+    const cleaned = out
+      .map((s) =>
+        s
+          .replace(/\\\)/g, ")")
+          .replace(/\\\(/g, "(")
+          .replace(/\\n/g, " ")
+          .replace(/\\r/g, " ")
+          .replace(/\\t/g, " ")
+          .replace(/\\f/g, " ")
+      )
+      .join(" ");
+    return cleaned;
+  };
+
+  const hexToString = (hex: string) => {
+    const clean = hex.replace(/\s+/g, "");
+    const bytes = new Uint8Array(Math.floor(clean.length / 2));
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(clean.substr(i * 2, 2), 16) || 32;
+    try {
+      return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    } catch {
+      return new TextDecoder("latin1").decode(bytes);
+    }
+  };
+
+  const bytesFromLatin1 = (s: string) => {
+    const arr = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) arr[i] = s.charCodeAt(i) & 0xff;
+    return arr;
+  };
+
   // 1) Try robust extraction with pdfjs (may fail in edge runtimes without DOM/workers)
   try {
     const pdfjsModule: any = await import("https://esm.sh/pdfjs-dist@3.11.174/legacy/build/pdf.mjs");
@@ -62,56 +130,70 @@ async function extractPdfText(arrayBuffer: ArrayBuffer): Promise<string> {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = (content.items as any[])
-        .map((item: any) => (item && item.str) ? item.str : "")
-        .join(" ");
+      const pageText = (content.items as any[]).map((item: any) => (item && item.str) ? item.str : "").join(" ");
       text += pageText + "\n";
     }
-    if (text.trim().length > 0) return text;
+    if (text.trim().length > 0) {
+      console.info("pdfjs extracted characters:", text.length);
+      return text;
+    }
   } catch (err) {
-    console.error("pdfjs extraction failed; falling back to lightweight parser:", err);
+    console.error("pdfjs extraction failed; falling back to FlateDecode parser:", err);
   }
 
-  // 2) Fallback: lightweight parser that extracts strings around Tj/TJ operators without DOM/Workers
+  // 2) Fallback: Parse PDF streams and inflate FlateDecode, then collect Tj/TJ
+  let aggregated = "";
   try {
     const raw = new TextDecoder("latin1").decode(new Uint8Array(arrayBuffer));
-    const out: string[] = [];
 
-    // Match `(text) Tj`
-    const tjRegex = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*Tj/g;
-    let m: RegExpExecArray | null;
-    while ((m = tjRegex.exec(raw)) !== null) {
-      out.push(m[1]);
-    }
+    // Gather uncompressed operators directly from the raw file first
+    aggregated += collectTjText(raw) + " ";
 
-    // Match `[(...)(...)] TJ`
-    const tjArrRegex = /\[(.*?)\]\s*TJ/gms;
-    let ma: RegExpExecArray | null;
-    while ((ma = tjArrRegex.exec(raw)) !== null) {
-      const inner = ma[1];
-      const innerRegex = /\(([^)\\]*(?:\\.[^)\\]*)*)\)/g;
-      let mi: RegExpExecArray | null;
-      while ((mi = innerRegex.exec(inner)) !== null) {
-        out.push(mi[1]);
+    // Try to inflate FlateDecode streams
+    const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/gm;
+    const pako: any = await import("https://esm.sh/pako@2.1.0");
+
+    let match: RegExpExecArray | null;
+    let streamCount = 0, inflatedCount = 0;
+    while ((match = streamRegex.exec(raw)) !== null) {
+      streamCount++;
+      const startIdx = match.index;
+      const header = raw.slice(Math.max(0, startIdx - 1200), startIdx); // dictionary is right before 'stream'
+      const isFlate = /\/Filter\s*\/(?:FlateDecode|Fl)/.test(header);
+
+      const streamDataLatin1 = match[1];
+      const compressedBytes = bytesFromLatin1(streamDataLatin1);
+
+      if (isFlate) {
+        try {
+          const inflated = pako.inflate(compressedBytes);
+          const inflatedStr = (() => {
+            try { return new TextDecoder("utf-8", { fatal: false }).decode(inflated); } catch { /* ignore */ }
+            return new TextDecoder("latin1").decode(inflated);
+          })();
+          inflatedCount++;
+          aggregated += collectTjText(inflatedStr) + " ";
+        } catch (e) {
+          // Not a valid flate block (or extra subfilters). Ignore but continue.
+        }
+      } else {
+        // Some producers omit Filter in dictionary; attempt best-effort inflate anyway
+        try {
+          const inflated = pako.inflate(compressedBytes);
+          const inflatedStr = new TextDecoder("latin1").decode(inflated);
+          inflatedCount++;
+          aggregated += collectTjText(inflatedStr) + " ";
+        } catch {}
       }
     }
-
-    const cleaned = out
-      .map((s) => s
-        .replace(/\\\)/g, ")")
-        .replace(/\\\(/g, "(")
-        .replace(/\\n/g, " ")
-        .replace(/\\r/g, " ")
-        .replace(/\\t/g, " ")
-        .replace(/\\f/g, " "))
-      .join(" ");
-
-    return cleaned;
+    console.info(`Parsed ${streamCount} streams, inflated ${inflatedCount}. Aggregated chars:`, aggregated.length);
   } catch (e) {
-    console.error("Lightweight PDF text extraction fallback failed:", e);
-    return "";
+    console.error("FlateDecode parsing failed: ", e);
   }
+
+  return aggregated.trim();
 }
+
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -195,9 +277,9 @@ serve(async (req) => {
       console.error("PDF text extraction failed:", e);
     }
 
-    if (!syllabusText || syllabusText.trim().length < 20) {
+if (!syllabusText || syllabusText.trim().length < 5) {
       console.error("Syllabus PDF text insufficient. Length:", syllabusText?.length || 0);
-      return json({ error: "Could not read the syllabus file text. Please upload a text-based PDF or try another file." }, 422);
+      return json({ error: "Unable to extract text from the syllabus. Please upload a text-based (non-scanned) PDF and try again." }, 422);
     }
 
     const systemPrompt = "You are an expert educator. Extract the ACTUAL course content from the syllabus TEXT (modules, topics, subtopics) and generate comprehensive study materials. IGNORE metadata/boilerplate.";
