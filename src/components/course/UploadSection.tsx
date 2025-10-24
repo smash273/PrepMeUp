@@ -92,11 +92,50 @@ export default function UploadSection({ courseId }: UploadSectionProps) {
   };
 
   const handleGenerateContent = async () => {
-    setGenerating(true);
+    // Ensure user is logged in and syllabus exists before invoking the function
+    const [{ data: userData }, { data: sessionData }] = await Promise.all([
+      supabase.auth.getUser(),
+      supabase.auth.getSession(),
+    ]);
 
+    const user = userData?.user;
+    const session = sessionData?.session;
+
+    if (!user || !session?.access_token) {
+      toast({
+        variant: "destructive",
+        title: "Sign in required",
+        description: "Please sign in to generate study content.",
+      });
+      return;
+    }
+
+    // Avoid calling the function (and AI) if no syllabus uploaded
+    const { count: syllabusCount, error: syllabusCheckError } = await supabase
+      .from("resource_materials")
+      .select("id", { count: "exact", head: true })
+      .eq("course_id", courseId)
+      .eq("user_id", user.id)
+      .eq("resource_type", "syllabus");
+
+    if (syllabusCheckError) {
+      toast({ variant: "destructive", title: "Error", description: syllabusCheckError.message });
+      return;
+    }
+    if (!syllabusCount) {
+      toast({
+        variant: "destructive",
+        title: "Syllabus required",
+        description: "Upload a syllabus first, then try generating content.",
+      });
+      return;
+    }
+
+    setGenerating(true);
     try {
       const { data, error } = await supabase.functions.invoke("generate-study-content", {
         body: { courseId },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (error) throw error;
@@ -106,11 +145,13 @@ export default function UploadSection({ courseId }: UploadSectionProps) {
         description: "Your study materials are ready.",
       });
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Generation failed",
-        description: error.message,
-      });
+      const message =
+        error?.status === 429
+          ? "Rate limit exceeded. Please wait a moment and try again."
+          : error?.status === 402
+          ? "AI credits exhausted. Please add credits and retry."
+          : error?.message || "Something went wrong.";
+      toast({ variant: "destructive", title: "Generation failed", description: message });
     } finally {
       setGenerating(false);
     }

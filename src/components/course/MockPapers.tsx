@@ -45,38 +45,63 @@ export default function MockPapers({ courseId }: MockPapersProps) {
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Ensure user is logged in and content exists before invoking the function
+    const [{ data: userData }, { data: sessionData }] = await Promise.all([
+      supabase.auth.getUser(),
+      supabase.auth.getSession(),
+    ]);
+    const user = userData?.user;
+    const session = sessionData?.session;
+
+    if (!user || !session?.access_token) {
+      toast({
+        variant: "destructive",
+        title: "Sign in required",
+        description: "Please sign in to generate a mock paper.",
+      });
+      return;
+    }
+
     setGenerating(true);
 
     try {
+      // Avoid AI call if no study content available for this course/user
+      const { count: contentCount, error: contentErr } = await supabase
+        .from("generated_content")
+        .select("id", { count: "exact", head: true })
+        .eq("course_id", courseId)
+        .eq("user_id", user.id);
+
+      if (contentErr) throw contentErr;
+      if (!contentCount) {
+        toast({
+          variant: "destructive",
+          title: "No study content yet",
+          description: "Generate study materials first, then try again.",
+        });
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke("generate-mock-paper", {
-        body: {
-          courseId,
-          title,
-          questionType,
-          totalMarks,
-          duration,
-        },
+        body: { courseId, title, questionType, totalMarks, duration },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (error) throw error;
 
-      toast({
-        title: "Mock paper generated!",
-        description: "Your test is ready.",
-      });
-      
+      toast({ title: "Mock paper generated!", description: "Your test is ready." });
       setIsDialogOpen(false);
       setTitle("");
       fetchPapers();
     } catch (error: any) {
-      const msg = error?.message || "Something went wrong.";
-      toast({
-        variant: "destructive",
-        title: "Generation failed",
-        description: msg.includes("No study content")
-          ? "Please generate study materials first (Upload > Generate Study Content), then try again."
-          : msg,
-      });
+      const msg =
+        error?.status === 429
+          ? "Rate limit exceeded. Please wait a moment and try again."
+          : error?.status === 402
+          ? "AI credits exhausted. Please add credits and retry."
+          : error?.message || "Something went wrong.";
+      toast({ variant: "destructive", title: "Generation failed", description: msg });
     } finally {
       setGenerating(false);
     }
