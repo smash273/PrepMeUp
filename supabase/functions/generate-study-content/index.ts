@@ -210,7 +210,7 @@ serve(async (req) => {
     }
     const token = authHeader.split(" ")[1];
 
-    const { courseId } = await req.json().catch(() => ({}));
+    const { courseId, syllabusText } = await req.json().catch(() => ({}));
     if (!courseId) return json({ error: "Request body is missing or 'courseId' is not provided." }, 400);
     
     // --- Environment Variables Check ---
@@ -263,22 +263,25 @@ serve(async (req) => {
       return json({ error: `Failed to download syllabus from storage. Check RLS policies or file path. (${downloadError.message})` }, 404);
     }
 
-    // Convert PDF to base64 for AI vision processing
-    const arrayBuffer = await syllabusBlob.arrayBuffer();
-    // Safe base64 encoding without call stack issues
-    const base64Pdf = encodeBase64(arrayBuffer);
-    console.log(`PDF file prepared for AI analysis (${arrayBuffer.byteLength} bytes)...`);
+    // Prefer client-provided syllabusText to avoid brittle PDF parsing in edge
+    let syllabusTextFinal = (typeof syllabusText === "string" ? syllabusText : "").trim();
 
-    // Extract text from PDF instead of sending as image to AI
-    let syllabusText = "";
-    try {
-      syllabusText = await extractPdfText(arrayBuffer);
-    } catch (e) {
-      console.error("PDF text extraction failed:", e);
+    if (!syllabusTextFinal) {
+      // Convert PDF to base64 for AI vision processing (kept for debugging)
+      const arrayBuffer = await syllabusBlob.arrayBuffer();
+      const base64Pdf = encodeBase64(arrayBuffer);
+      console.log(`PDF file prepared for AI analysis (${arrayBuffer.byteLength} bytes)...`);
+
+      // Extract text from PDF instead of sending as image to AI
+      try {
+        syllabusTextFinal = await extractPdfText(arrayBuffer);
+      } catch (e) {
+        console.error("PDF text extraction failed:", e);
+      }
     }
 
-if (!syllabusText || syllabusText.trim().length < 5) {
-      console.error("Syllabus PDF text insufficient. Length:", syllabusText?.length || 0);
+    if (!syllabusTextFinal || syllabusTextFinal.trim().length < 5) {
+      console.error("Syllabus PDF text insufficient. Length:", syllabusTextFinal?.length || 0);
       return json({ error: "Unable to extract text from the syllabus. Please upload a text-based (non-scanned) PDF and try again." }, 422);
     }
 
@@ -317,7 +320,7 @@ Return ONLY valid JSON with this shape:
         { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `${userPrompt}\n\nSYLLABUS TEXT (truncated to fit model limits):\n${syllabusText.slice(0, 60000)}`
+          content: `${userPrompt}\n\nSYLLABUS TEXT (truncated to fit model limits):\n${syllabusTextFinal.slice(0, 60000)}`
         }
       ]
     };

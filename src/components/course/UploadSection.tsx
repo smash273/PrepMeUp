@@ -110,19 +110,21 @@ export default function UploadSection({ courseId }: UploadSectionProps) {
       return;
     }
 
-    // Avoid calling the function (and AI) if no syllabus uploaded
-    const { count: syllabusCount, error: syllabusCheckError } = await supabase
+    // Check syllabus presence and get its file_path
+    const { data: syllabusRows, error: syllabusErr } = await supabase
       .from("resource_materials")
-      .select("id", { count: "exact", head: true })
+      .select("file_path")
       .eq("course_id", courseId)
       .eq("user_id", user.id)
-      .eq("resource_type", "syllabus");
+      .eq("resource_type", "syllabus")
+      .limit(1);
 
-    if (syllabusCheckError) {
-      toast({ variant: "destructive", title: "Error", description: syllabusCheckError.message });
+    if (syllabusErr) {
+      toast({ variant: "destructive", title: "Error", description: syllabusErr.message });
       return;
     }
-    if (!syllabusCount) {
+    const filePath = syllabusRows?.[0]?.file_path as string | undefined;
+    if (!filePath) {
       toast({
         variant: "destructive",
         title: "Syllabus required",
@@ -133,8 +135,36 @@ export default function UploadSection({ courseId }: UploadSectionProps) {
 
     setGenerating(true);
     try {
+      // Download the private syllabus file and extract text client-side with pdf.js
+      const { data: fileBlob, error: dlErr } = await supabase.storage
+        .from("syllabus")
+        .download(filePath);
+      if (dlErr || !fileBlob) throw dlErr || new Error("Unable to download syllabus file");
+
+      // Dynamic import to keep bundle light and work with Vite
+      const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const workerUrl: any = (await import('pdfjs-dist/legacy/build/pdf.worker.mjs?url')).default;
+      if (pdfjs?.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+
+      const arrayBuffer = await fileBlob.arrayBuffer();
+      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
+      const pdf = await loadingTask.promise;
+      let syllabusText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        syllabusText += (content.items as any[])
+          .map((it: any) => (it && it.str) ? it.str : '')
+          .join(' ') + '\n';
+      }
+      syllabusText = syllabusText.trim();
+
+      if (!syllabusText || syllabusText.length < 5) {
+        throw new Error('Could not read text from syllabus (likely a scanned PDF).');
+      }
+
       const { data, error } = await supabase.functions.invoke("generate-study-content", {
-        body: { courseId },
+        body: { courseId, syllabusText },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
