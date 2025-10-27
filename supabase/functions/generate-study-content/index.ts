@@ -331,12 +331,18 @@ Return ONLY valid JSON with this shape:
       body: JSON.stringify(payload),
     });
 
-    if (!aiResponse.ok) {
+if (!aiResponse.ok) {
       const detail = await aiResponse.text().catch(() => "N/A");
       console.error(`AI API Error: Status ${aiResponse.status}. Details: ${detail}`);
+      const status = aiResponse.status === 429 || aiResponse.status === 402 ? aiResponse.status : 502;
+      const message = aiResponse.status === 429
+        ? 'Rate limit exceeded. Please try again in a moment.'
+        : aiResponse.status === 402
+          ? 'Payment required. Please add AI credits.'
+          : 'Please try again.';
       return json({ 
-        error: `AI service error (${aiResponse.status}). ${aiResponse.status === 429 ? 'Rate limit exceeded. Please try again in a moment.' : 'Please try again.'}` 
-      }, 502);
+        error: `AI service error (${aiResponse.status}). ${message}` 
+      }, status);
     }
 
     const aiData = await aiResponse.json();
@@ -352,12 +358,21 @@ Return ONLY valid JSON with this shape:
     // Remove markdown code fences (```json ... ```) that LLMs often include
     rawContent = rawContent.replace(/```json\s*/gi, "").replace(/```\s*$/g, "").trim();
 
-    let content: any;
+let content: any;
     try {
       content = JSON.parse(rawContent);
     } catch (e) {
-      console.error(`JSON parse failed. Error: ${e}. Raw content: ${rawContent}`);
-      return json({ error: "AI output is not valid JSON. Please try again." }, 502);
+      // Try to extract a JSON object from within the content
+      const match = rawContent.match(/\{[\s\S]*\}$/);
+      if (match) {
+        try { content = JSON.parse(match[0]); } catch (e2) {
+          console.error(`JSON parse failed twice. Error: ${e2}. Raw content: ${rawContent}`);
+          return json({ error: "AI output is not valid JSON. Please try again." }, 502);
+        }
+      } else {
+        console.error(`JSON parse failed. Error: ${e}. Raw content: ${rawContent}`);
+        return json({ error: "AI output is not valid JSON. Please try again." }, 502);
+      }
     }
 
     if (!Array.isArray(content.modules)) {

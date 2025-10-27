@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 serve(async (req) => {
@@ -20,22 +21,43 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get user from auth header
-    const authHeader = req.headers.get("authorization");
-    const token = authHeader?.replace("Bearer ", "");
-    const { data: { user } } = await supabase.auth.getUser(token!);
+// Get user from auth header
+const authHeader = req.headers.get("authorization");
+if (!authHeader?.startsWith("Bearer ")) {
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    status: 401,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+const token = authHeader.split(" ")[1];
+const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+if (userErr || !user) {
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    status: 401,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
-    if (!user) throw new Error("Unauthorized");
+// Fetch generated content for context
+const { data: content, error: contentError } = await supabase
+  .from("generated_content")
+  .select("*")
+  .eq("course_id", courseId)
+  .eq("user_id", user.id);
 
-    // Fetch generated content for context
-    const { data: content } = await supabase
-      .from("generated_content")
-      .select("*")
-      .eq("course_id", courseId);
+if (contentError) {
+  return new Response(
+    JSON.stringify({ error: `Failed to fetch content: ${contentError.message}` }),
+    { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
 
-    if (!content || content.length === 0) {
-      throw new Error("No study content found. Please generate study materials first.");
-    }
+if (!content || content.length === 0) {
+  return new Response(
+    JSON.stringify({ error: "No study content found. Please generate study materials first." }),
+    { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
 
     // Format content for AI context
     const contentContext = content.map(c => {
@@ -92,19 +114,49 @@ Format as valid JSON (no markdown, no code blocks):
       }),
     });
 
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text().catch(() => "Unknown error");
-      console.error(`AI API Error: Status ${aiResponse.status}, Response: ${errorText}`);
-      throw new Error(`Failed to generate questions: ${aiResponse.status === 429 ? 'Rate limit exceeded' : 'AI service error'}`);
-    }
+if (!aiResponse.ok) {
+  const errorText = await aiResponse.text().catch(() => "Unknown error");
+  console.error(`AI API Error: Status ${aiResponse.status}, Response: ${errorText}`);
+  const status = aiResponse.status === 429 || aiResponse.status === 402 ? aiResponse.status : 502;
+  const msg = aiResponse.status === 429
+    ? "Rate limit exceeded. Please try again later."
+    : aiResponse.status === 402
+      ? "Payment required. Please add AI credits."
+      : "AI service error. Please retry.";
+  return new Response(JSON.stringify({ error: msg }), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
-    const aiData = await aiResponse.json();
-    let rawContent = aiData.choices[0].message.content;
-    
-    // Strip markdown code blocks if present
-    rawContent = rawContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    
-    const questionsData = JSON.parse(rawContent);
+const aiData = await aiResponse.json();
+let rawContent = aiData?.choices?.[0]?.message?.content;
+
+if (!rawContent || typeof rawContent !== "string") {
+  return new Response(JSON.stringify({ error: "Malformed AI response" }), {
+    status: 502,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+rawContent = rawContent.replace(/```json\s*/gi, "").replace(/```\s*$/g, "").trim();
+
+let questionsData: any;
+try {
+  questionsData = JSON.parse(rawContent);
+} catch {
+  const match = rawContent.match(/\{[\s\S]*\}$/);
+  if (match) {
+    try { questionsData = JSON.parse(match[0]); } catch {}
+  }
+}
+
+if (!questionsData?.questions || !Array.isArray(questionsData.questions)) {
+  return new Response(JSON.stringify({ error: "AI output is not valid JSON." }), {
+    status: 502,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
     // Create mock paper
     const { data: paper, error: paperError } = await supabase
@@ -122,18 +174,24 @@ Format as valid JSON (no markdown, no code blocks):
 
     if (paperError) throw paperError;
 
-    // Insert questions
-    for (const q of questionsData.questions) {
-      await supabase.from("questions").insert({
-        mock_paper_id: paper.id,
-        question_text: q.text,
-        question_type: questionType,
-        marks: q.marks,
-        options: questionType === "mcq" ? q.options : null,
-        correct_answer: questionType === "long_answer" ? q.answer : null,
-        concept_tags: [q.concept],
-      });
-    }
+// Insert questions
+const rows = questionsData.questions.map((q: any) => ({
+  mock_paper_id: paper.id,
+  question_text: q.text,
+  question_type: questionType,
+  marks: q.marks,
+  options: questionType === "mcq" ? q.options : null,
+  correct_answer: questionType === "long_answer" ? q.answer : null,
+  concept_tags: q.concept ? [q.concept] : null,
+}));
+const { error: qErr } = await supabase.from("questions").insert(rows);
+if (qErr) {
+  console.error("Questions insert error:", qErr);
+  return new Response(JSON.stringify({ error: "Failed to save questions." }), {
+    status: 500,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
     return new Response(
       JSON.stringify({ success: true, paperId: paper.id }),
