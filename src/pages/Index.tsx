@@ -22,7 +22,14 @@ const Index = () => {
               </p>
               <div className="flex gap-4">
                 <Button variant="hero" size="lg" onClick={() => navigate("/auth")}>Get Started Free</Button>
-                <Button variant="outline" size="lg" className="bg-white/10 border-white/20 text-primary-foreground hover:bg-white/20">Learn More</Button>
+                <Button 
+                  variant="outline" 
+                  size="lg" 
+                  className="bg-white/10 border-white/20 text-primary-foreground hover:bg-white/20"
+                  onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                >
+                  Learn More
+                </Button>
               </div>
             </div>
             <div className="animate-slide-up">
@@ -33,7 +40,7 @@ const Index = () => {
       </section>
 
       {/* Features Section */}
-      <section className="py-20 px-4">
+      <section id="features" className="py-20 px-4">
         <div className="container mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold mb-4">Everything You Need to Excel</h2>
