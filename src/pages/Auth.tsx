@@ -8,11 +8,12 @@ import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ArrowLeft } from "lucide-react";
 
-type AuthMode = "login" | "signup" | "verify-otp" | "forgot-password" | "reset-password";
+type AuthMode = "login" | "signup" | "verify-otp" | "forgot-password";
 
 export default function Auth() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,61 @@ export default function Auth() {
   const VIT_EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$/i;
   const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
-  const handleSendOTP = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!VIT_EMAIL_REGEX.test(normalizedEmail)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid email domain",
+        description: "Please use your VIT student email (…@vitstudent.ac.in).",
+      });
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      toast({
+        variant: "destructive",
+        title: "Password too short",
+        description: "Password must be at least 6 characters.",
+      });
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          data: { full_name: fullName },
+          emailRedirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Verification code sent!",
+        description: "Please check your email for the OTP code.",
+      });
+      setMode("verify-otp");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
@@ -39,61 +94,57 @@ export default function Auth() {
     }
 
     try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email: normalizedEmail,
-          password: crypto.randomUUID(), // Random password as we're using OTP
-          options: {
-            data: { full_name: fullName },
-            emailRedirectTo: `${window.location.origin}/dashboard`,
-          },
-        });
+      const { error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
 
-        if (error) throw error;
+      if (error) throw error;
 
-        // Send OTP
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          email: normalizedEmail,
-          options: {
-            shouldCreateUser: false,
-          },
-        });
+      toast({
+        title: "Success!",
+        description: "You've been logged in successfully.",
+      });
+      navigate("/dashboard");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: error.message || "Invalid email or password.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        if (otpError) throw otpError;
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
 
-        toast({
-          title: "Verification code sent!",
-          description: "Please check your email for the OTP code.",
-        });
-        setMode("verify-otp");
-      } else if (mode === "login") {
-        const { error } = await supabase.auth.signInWithOtp({
-          email: normalizedEmail,
-          options: {
-            shouldCreateUser: false,
-          },
-        });
+    const normalizedEmail = normalizeEmail(email);
 
-        if (error) throw error;
+    if (!VIT_EMAIL_REGEX.test(normalizedEmail)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid email domain",
+        description: "Please use your VIT student email (…@vitstudent.ac.in).",
+      });
+      setLoading(false);
+      return;
+    }
 
-        toast({
-          title: "Verification code sent!",
-          description: "Please check your email for the OTP code.",
-        });
-        setMode("verify-otp");
-      } else if (mode === "forgot-password") {
-        const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-          redirectTo: `${window.location.origin}/auth`,
-        });
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${window.location.origin}/dashboard`,
+      });
 
-        if (error) throw error;
+      if (error) throw error;
 
-        toast({
-          title: "Reset link sent!",
-          description: "Please check your email for the password reset link.",
-        });
-        setMode("login");
-      }
+      toast({
+        title: "Reset link sent!",
+        description: "Please check your email for the password reset link.",
+      });
+      setMode("login");
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -115,13 +166,13 @@ export default function Auth() {
       const { error } = await supabase.auth.verifyOtp({
         email: normalizedEmail,
         token: otp,
-        type: "email",
+        type: "signup",
       });
 
       if (error) throw error;
 
       toast({
-        title: "Success!",
+        title: "Account verified!",
         description: "You've been logged in successfully.",
       });
       navigate("/dashboard");
@@ -141,11 +192,9 @@ export default function Auth() {
     const normalizedEmail = normalizeEmail(email);
 
     try {
-      const { error } = await supabase.auth.signInWithOtp({
+      const { error } = await supabase.auth.resend({
+        type: "signup",
         email: normalizedEmail,
-        options: {
-          shouldCreateUser: false,
-        },
       });
 
       if (error) throw error;
@@ -167,6 +216,7 @@ export default function Auth() {
 
   const resetForm = () => {
     setEmail("");
+    setPassword("");
     setFullName("");
     setOtp("");
     setMode("login");
@@ -179,8 +229,8 @@ export default function Auth() {
           <h1 className="text-3xl font-bold text-primary mb-2">PrepMeUp</h1>
           <p className="text-muted-foreground">
             {mode === "signup" && "Create your account"}
-            {mode === "login" && "Welcome back"}
-            {mode === "verify-otp" && "Enter verification code"}
+            {mode === "login" && "Sign in to your account"}
+            {mode === "verify-otp" && "Verify your email"}
             {mode === "forgot-password" && "Reset your password"}
           </p>
         </div>
@@ -239,21 +289,19 @@ export default function Auth() {
               </button>
             </div>
           </form>
-        ) : (
-          <form onSubmit={handleSendOTP} className="space-y-4">
-            {mode === "signup" && (
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required
-                  placeholder="Enter your full name"
-                />
-              </div>
-            )}
+        ) : mode === "signup" ? (
+          <form onSubmit={handleSignup} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="fullName">Full Name</Label>
+              <Input
+                id="fullName"
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+                placeholder="Enter your full name"
+              />
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -274,6 +322,23 @@ export default function Auth() {
               </p>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="Choose a strong password"
+                minLength={6}
+                autoComplete="new-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                Minimum 6 characters.
+              </p>
+            </div>
+
             <Button
               type="submit"
               className="w-full"
@@ -283,12 +348,94 @@ export default function Auth() {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending code...
+                  Creating account...
                 </>
-              ) : mode === "forgot-password" ? (
-                "Send Reset Link"
               ) : (
-                "Send Verification Code"
+                "Create Account"
+              )}
+            </Button>
+          </form>
+        ) : mode === "login" ? (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onBlur={(e) => setEmail(normalizeEmail(e.target.value))}
+                required
+                placeholder="yourname@vitstudent.ac.in"
+                pattern="^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$"
+                title="Use your VIT student email (…@vitstudent.ac.in)"
+                autoComplete="email"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="Enter your password"
+                autoComplete="current-password"
+              />
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full"
+              variant="hero"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                "Sign In"
+              )}
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onBlur={(e) => setEmail(normalizeEmail(e.target.value))}
+                required
+                placeholder="yourname@vitstudent.ac.in"
+                pattern="^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$"
+                title="Use your VIT student email (…@vitstudent.ac.in)"
+                autoComplete="email"
+              />
+              <p className="text-xs text-muted-foreground">
+                We'll send you a password reset link.
+              </p>
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full"
+              variant="hero"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                "Send Reset Link"
               )}
             </Button>
           </form>
