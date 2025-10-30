@@ -1,4 +1,4 @@
-# Welcome to your Lovable project
+# Welcome to PrepMeUp project published on Loveable
 
 ## Project info
 
