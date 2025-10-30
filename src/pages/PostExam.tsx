@@ -43,7 +43,7 @@ export default function PostExam() {
       const pageCount = Math.min(pdf.numPages, 20); // cap to 20 pages for performance
       for (let i = 1; i <= pageCount; i++) {
         const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
+        const content: any = await page.getTextContent();
         const pageText = content.items.map((it: any) => (it.str || "")).join(" ");
         fullText += `\n\n--- Page ${i} ---\n` + pageText;
       }
@@ -52,6 +52,33 @@ export default function PostExam() {
       console.error("PDF extraction failed", e);
       return "";
     }
+  };
+
+  // Render up to 3 PDF pages to JPEG data URLs for OCR fallback
+  const renderPdfToImages = async (file: File) => {
+    const images: string[] = [];
+    try {
+      // @ts-ignore - worker global
+      (pdfjsLib as any).GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.296/build/pdf.worker.min.js";
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      const pageCount = Math.min(pdf.numPages, 3);
+      for (let i = 1; i <= pageCount; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) continue;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: ctx as any, viewport }).promise;
+        images.push(canvas.toDataURL("image/jpeg", 0.92));
+      }
+    } catch (e) {
+      console.error("PDF render to images failed", e);
+    }
+    return images;
   };
 
   const handleUpload = async () => {
@@ -106,15 +133,23 @@ export default function PostExam() {
       // Trigger evaluation with optional pre-extracted PDF text
       let sheetText = "";
       let keyText = "";
+      let sheetImages: string[] | undefined = undefined;
+      let keyImages: string[] | undefined = undefined;
       if (answerSheet && answerSheet.type.includes("pdf")) {
         sheetText = await extractPdfText(answerSheet);
+        if (!sheetText) {
+          sheetImages = await renderPdfToImages(answerSheet);
+        }
       }
       if (answerKey && answerKey.type.includes("pdf")) {
         keyText = await extractPdfText(answerKey);
+        if (!keyText) {
+          keyImages = await renderPdfToImages(answerKey);
+        }
       }
 
       const { data: evalData, error: evalError } = await supabase.functions.invoke("evaluate-answer-sheet", {
-        body: { submissionId: submission.id, answerSheetText: sheetText, answerKeyText: keyText },
+        body: { submissionId: submission.id, answerSheetText: sheetText, answerKeyText: keyText, answerSheetImages: sheetImages, answerKeyImages: keyImages },
       });
 
       if (evalError) throw evalError;

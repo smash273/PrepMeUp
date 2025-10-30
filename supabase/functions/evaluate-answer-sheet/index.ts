@@ -80,12 +80,38 @@ serve(async (req) => {
     const isPDF = fileExtension === 'pdf';
     const mimeType = isPDF ? 'application/pdf' : 'image/jpeg';
 
+    let ocrText = "";
     if (body.answerSheetText && typeof body.answerSheetText === 'string' && body.answerSheetText.trim().length > 0) {
       console.log("Using provided answer sheet text (client-extracted)");
+      ocrText = body.answerSheetText.trim();
+    } else if (Array.isArray(body.answerSheetImages) && body.answerSheetImages.length > 0) {
+      console.log(`Extracting text from ${body.answerSheetImages.length} provided page images...`);
+      const contentParts: any[] = [
+        { type: "text", text: "Extract all text from these answer sheet page images. Identify question numbers and student's answers. Return in format: Q1: [student answer], Q2: [student answer], etc." }
+      ];
+      for (const img of body.answerSheetImages.slice(0, 5)) {
+        contentParts.push({ type: "image_url", image_url: { url: img } });
+      }
+      const ocrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "google/gemini-2.5-pro", messages: [{ role: "user", content: contentParts }] }),
+      });
+      if (!ocrResponse.ok) {
+        const errorText = await ocrResponse.text();
+        console.error("OCR failed from images:", errorText);
+        throw new Error("Failed to extract text from answer sheet");
+      }
+      const ocrData = await ocrResponse.json();
+      ocrText = ocrData.choices[0].message.content || "";
     } else {
       console.log("Extracting text from answer sheet using Gemini Vision...");
 
-      // Extract text from answer sheet using Gemini
+      // Extract text from answer sheet using Gemini (supports image files; PDFs should be pre-extracted client-side)
+      if (isPDF) {
+        console.error("PDF provided without extracted text or images");
+        throw new Error("Failed to extract text from answer sheet");
+      }
       const ocrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -98,7 +124,7 @@ serve(async (req) => {
             {
               role: "user",
               content: [
-                { type: "text", text: "Extract all text from this answer sheet document. Identify question numbers and student's answers. Return in format: Q1: [student answer], Q2: [student answer], etc." },
+                { type: "text", text: "Extract all text from this answer sheet image. Identify question numbers and student's answers. Return in format: Q1: [student answer], Q2: [student answer], etc." },
                 { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64AnswerSheet}` } }
               ]
             }
@@ -113,17 +139,34 @@ serve(async (req) => {
       }
 
       const ocrData = await ocrResponse.json();
-      body.answerSheetText = ocrData.choices[0].message.content;
+      ocrText = ocrData.choices[0].message.content;
     }
 
-    const ocrText = String(body.answerSheetText || "");
     console.log("Extracted text length:", ocrText.length);
 
     // Handle answer key if provided
     let answerKeyText = null;
     if (body.answerKeyText && typeof body.answerKeyText === 'string' && body.answerKeyText.trim().length > 0) {
       console.log("Using provided answer key text (client-extracted)");
-      answerKeyText = body.answerKeyText;
+      answerKeyText = body.answerKeyText.trim();
+    } else if (Array.isArray(body.answerKeyImages) && body.answerKeyImages.length > 0) {
+      console.log(`Extracting text from ${body.answerKeyImages.length} provided answer key images...`);
+      const contentParts: any[] = [
+        { type: "text", text: "Extract text from this answer key/question paper. Identify questions and their expected answers if present. Return in structured format." }
+      ];
+      for (const img of body.answerKeyImages.slice(0, 5)) {
+        contentParts.push({ type: "image_url", image_url: { url: img } });
+      }
+      const keyOcrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${lovableApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "google/gemini-2.5-pro", messages: [{ role: "user", content: contentParts }] }),
+      });
+      if (keyOcrResponse.ok) {
+        const keyOcrData = await keyOcrResponse.json();
+        answerKeyText = keyOcrData.choices[0].message.content || null;
+        if (answerKeyText) console.log("Extracted answer key text length:", answerKeyText.length);
+      }
     } else if (submission.answer_key_path) {
       console.log("Processing answer key:", submission.answer_key_path);
       
@@ -148,31 +191,35 @@ serve(async (req) => {
         const keyIsPDF = keyExtension === 'pdf';
         const keyMimeType = keyIsPDF ? 'application/pdf' : 'image/jpeg';
 
-        // Extract text from answer key
-        const keyOcrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${lovableApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-pro",
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: "Extract text from this answer key/question paper. Identify questions and their expected answers if present. Return in structured format." },
-                  { type: "image_url", image_url: { url: `data:${keyMimeType};base64,${base64AnswerKey}` } }
-                ]
-              }
-            ],
-          }),
-        });
-
-        if (keyOcrResponse.ok) {
-          const keyOcrData = await keyOcrResponse.json();
-          answerKeyText = keyOcrData.choices[0].message.content;
-          console.log("Extracted answer key text length:", answerKeyText.length);
+        // Extract text from answer key (only images; PDFs should be pre-extracted)
+        if (!keyIsPDF) {
+          const keyOcrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${lovableApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-pro",
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: "Extract text from this answer key/question paper. Identify questions and their expected answers if present. Return in structured format." },
+                    { type: "image_url", image_url: { url: `data:${keyMimeType};base64,${base64AnswerKey}` } }
+                  ]
+                }
+              ],
+            }),
+          });
+  
+          if (keyOcrResponse.ok) {
+            const keyOcrData = await keyOcrResponse.json();
+            answerKeyText = keyOcrData.choices[0].message.content || null;
+            if (answerKeyText) console.log("Extracted answer key text length:", answerKeyText.length);
+          }
+        } else {
+          console.error("Answer key is PDF without extracted text or images; skipping server OCR");
         }
       }
     }

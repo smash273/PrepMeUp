@@ -41,6 +41,33 @@ export default function EvaluationResults() {
     }
   };
 
+  // Render up to 3 pages to images for OCR fallback
+  const renderPdfBlobToImages = async (blob: Blob) => {
+    const images: string[] = [];
+    try {
+      // @ts-ignore
+      (pdfjsLib as any).GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.296/build/pdf.worker.min.js";
+      const arrayBuffer = await blob.arrayBuffer();
+      const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      const pageCount = Math.min(pdf.numPages, 3);
+      for (let i = 1; i <= pageCount; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) continue;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: ctx as any, viewport }).promise;
+        images.push(canvas.toDataURL("image/jpeg", 0.92));
+      }
+    } catch (e) {
+      console.error("Render blob to images failed", e);
+    }
+    return images;
+  };
+
   const handleRetry = async () => {
     if (!submissionId) return;
     try {
@@ -50,12 +77,15 @@ export default function EvaluationResults() {
       // Download files owned by user
       let sheetText = "";
       let keyText = "";
+      let sheetImages: string[] | undefined = undefined;
+      let keyImages: string[] | undefined = undefined;
 
       if (submission?.answer_sheet_path) {
         const { data: sheetBlob } = await supabase.storage.from("answer-sheets").download(submission.answer_sheet_path);
         if (sheetBlob) {
           if (submission.answer_sheet_path.toLowerCase().endsWith('.pdf')) {
             sheetText = await extractPdfTextFromBlob(sheetBlob);
+            if (!sheetText) sheetImages = await renderPdfBlobToImages(sheetBlob);
           }
         }
       }
@@ -64,11 +94,12 @@ export default function EvaluationResults() {
         const { data: keyBlob } = await supabase.storage.from("answer-keys").download(submission.answer_key_path);
         if (keyBlob && submission.answer_key_path.toLowerCase().endsWith('.pdf')) {
           keyText = await extractPdfTextFromBlob(keyBlob);
+          if (!keyText) keyImages = await renderPdfBlobToImages(keyBlob);
         }
       }
 
       const { data, error } = await supabase.functions.invoke("evaluate-answer-sheet", {
-        body: { submissionId, answerSheetText: sheetText || undefined, answerKeyText: keyText || undefined },
+        body: { submissionId, answerSheetText: sheetText || undefined, answerKeyText: keyText || undefined, answerSheetImages: sheetImages, answerKeyImages: keyImages },
       });
 
       if (error) {
