@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Courses from "./pages/Courses";
 import CoursePage from "./pages/CoursePage";
 import PostExam from "./pages/PostExam";
+import EvaluationResults from "./pages/EvaluationResults";
 import TakeTest from "./pages/TakeTest";
 import ViewTest from "./pages/ViewTest";
 import TestResults from "./pages/TestResults";
@@ -29,6 +30,7 @@ const App = () => (
           <Route path="/courses" element={<Courses />} />
           <Route path="/course/:courseId" element={<CoursePage />} />
           <Route path="/post-exam" element={<PostExam />} />
+          <Route path="/evaluation/:submissionId" element={<EvaluationResults />} />
           <Route path="/test/:paperId" element={<TakeTest />} />
           <Route path="/test/:paperId/view" element={<ViewTest />} />
           <Route path="/test/:paperId/results" element={<TestResults />} />

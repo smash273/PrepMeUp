@@ -14,11 +14,21 @@ export default function CoursePage() {
   const { courseId } = useParams();
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("upload");
   const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
     fetchCourse();
+    
+    // Check for tab query parameter
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'content') {
+      setActiveTab('content');
+    } else if (tab === 'mocks') {
+      setActiveTab('mocks');
+    }
   }, [courseId]);
 
   const fetchCourse = async () => {
@@ -62,7 +72,7 @@ export default function CoursePage() {
       </nav>
 
       <main className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="upload" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 max-w-3xl mx-auto">
             <TabsTrigger value="upload">
               <Upload className="mr-2 h-4 w-4" />

@@ -6,11 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { BookOpen, FileText, Target, TrendingUp, LogOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import CourseSelector from "@/components/dashboard/CourseSelector";
 
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [courses, setCourses] = useState<any[]>([]);
+  const [courseSelectorOpen, setCourseSelectorOpen] = useState(false);
+  const [selectorConfig, setSelectorConfig] = useState({
+    title: "",
+    description: "",
+    action: "" as "study" | "mock" | "post-exam"
+  });
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -50,6 +57,21 @@ export default function Dashboard() {
     navigate("/");
   };
 
+  const handleCourseAction = (action: "study" | "mock" | "post-exam", title: string, description: string) => {
+    setSelectorConfig({ title, description, action });
+    setCourseSelectorOpen(true);
+  };
+
+  const handleCourseSelect = (courseId: string) => {
+    if (selectorConfig.action === "study") {
+      navigate(`/course/${courseId}?tab=content`);
+    } else if (selectorConfig.action === "mock") {
+      navigate(`/course/${courseId}?tab=mocks`);
+    } else if (selectorConfig.action === "post-exam") {
+      navigate("/post-exam");
+    }
+  };
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
@@ -81,7 +103,7 @@ export default function Dashboard() {
             </p>
           </Card>
 
-          <Card className="p-6 hover:shadow-glow transition-all cursor-pointer" onClick={() => navigate("/courses")}>
+          <Card className="p-6 hover:shadow-glow transition-all cursor-pointer" onClick={() => handleCourseAction("study", "Select Course for Study Content", "Choose a course to view AI-generated study materials")}>
             <FileText className="h-12 w-12 text-accent mb-4" />
             <h3 className="font-semibold text-lg mb-2">Study Content</h3>
             <p className="text-sm text-muted-foreground">
@@ -89,7 +111,7 @@ export default function Dashboard() {
             </p>
           </Card>
 
-          <Card className="p-6 hover:shadow-glow transition-all cursor-pointer" onClick={() => navigate("/courses")}>
+          <Card className="p-6 hover:shadow-glow transition-all cursor-pointer" onClick={() => handleCourseAction("mock", "Select Course for Mock Tests", "Choose a course to practice with AI-generated tests")}>
             <Target className="h-12 w-12 text-success mb-4" />
             <h3 className="font-semibold text-lg mb-2">Mock Tests</h3>
             <p className="text-sm text-muted-foreground">
@@ -139,6 +161,14 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      <CourseSelector
+        open={courseSelectorOpen}
+        onOpenChange={setCourseSelectorOpen}
+        title={selectorConfig.title}
+        description={selectorConfig.description}
+        onSelect={handleCourseSelect}
+      />
     </div>
   );
 }
