@@ -11,8 +11,11 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let submissionId: string | null = null;
+  
   try {
-    const { submissionId } = await req.json();
+    const body = await req.json();
+    submissionId = body.submissionId;
     
     if (!submissionId) {
       return new Response(
@@ -59,13 +62,27 @@ serve(async (req) => {
       throw new Error("Failed to download answer sheet");
     }
 
-    // Convert to base64 for Gemini
+    // Convert to base64 for Gemini - handle large files properly
     const arrayBuffer = await answerSheetData.arrayBuffer();
-    const base64AnswerSheet = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // Convert to base64 without spread operator to avoid stack overflow
+    let base64AnswerSheet = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < uint8Array.length; i += chunkSize) {
+      const chunk = uint8Array.slice(i, i + chunkSize);
+      base64AnswerSheet += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    base64AnswerSheet = btoa(base64AnswerSheet);
+    
+    // Detect file type
+    const fileExtension = submission.answer_sheet_path.split('.').pop()?.toLowerCase();
+    const isPDF = fileExtension === 'pdf';
+    const mimeType = isPDF ? 'application/pdf' : 'image/jpeg';
 
     console.log("Extracting text from answer sheet using Gemini Vision...");
 
-    // Extract text from answer sheet using Gemini Vision
+    // Extract text from answer sheet using Gemini
     const ocrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -80,12 +97,12 @@ serve(async (req) => {
             content: [
               {
                 type: "text",
-                text: "Extract all text from this answer sheet image. Identify question numbers and student's answers. Return in format: Q1: [student answer], Q2: [student answer], etc."
+                text: "Extract all text from this answer sheet document. Identify question numbers and student's answers. Return in format: Q1: [student answer], Q2: [student answer], etc."
               },
               {
                 type: "image_url",
                 image_url: {
-                  url: `data:image/jpeg;base64,${base64AnswerSheet}`
+                  url: `data:${mimeType};base64,${base64AnswerSheet}`
                 }
               }
             ]
@@ -115,7 +132,20 @@ serve(async (req) => {
 
       if (!keyDownloadError && answerKeyData) {
         const keyArrayBuffer = await answerKeyData.arrayBuffer();
-        const base64AnswerKey = btoa(String.fromCharCode(...new Uint8Array(keyArrayBuffer)));
+        const keyUint8Array = new Uint8Array(keyArrayBuffer);
+        
+        // Convert to base64 without spread operator
+        let base64AnswerKey = '';
+        const chunkSize = 8192;
+        for (let i = 0; i < keyUint8Array.length; i += chunkSize) {
+          const chunk = keyUint8Array.slice(i, i + chunkSize);
+          base64AnswerKey += String.fromCharCode.apply(null, Array.from(chunk));
+        }
+        base64AnswerKey = btoa(base64AnswerKey);
+        
+        const keyExtension = submission.answer_key_path.split('.').pop()?.toLowerCase();
+        const keyIsPDF = keyExtension === 'pdf';
+        const keyMimeType = keyIsPDF ? 'application/pdf' : 'image/jpeg';
 
         // Extract text from answer key
         const keyOcrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -137,7 +167,7 @@ serve(async (req) => {
                   {
                     type: "image_url",
                     image_url: {
-                      url: `data:image/jpeg;base64,${base64AnswerKey}`
+                      url: `data:${keyMimeType};base64,${base64AnswerKey}`
                     }
                   }
                 ]
@@ -361,20 +391,19 @@ Analyze the student's performance and provide detailed evaluation including:
     console.error("Evaluation error:", error);
     
     // Update submission status to failed
-    try {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      
-      const { submissionId } = await req.json();
-      if (submissionId) {
+    if (submissionId) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+        const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        
         await supabase
           .from("post_exam_submissions")
           .update({ processing_status: "failed" })
           .eq("id", submissionId);
+      } catch (updateError) {
+        console.error("Failed to update error status:", updateError);
       }
-    } catch (updateError) {
-      console.error("Failed to update error status:", updateError);
     }
     
     return new Response(
