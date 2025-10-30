@@ -90,7 +90,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-pro",
         messages: [
           {
             role: "user",
@@ -155,7 +155,7 @@ serve(async (req) => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
+            model: "google/gemini-2.5-pro",
             messages: [
               {
                 role: "user",
@@ -337,21 +337,32 @@ Analyze the student's performance and provide detailed evaluation including:
     const evalData = await evalResponse.json();
     console.log("AI response received");
     
-    // Extract evaluation from function call
-    const toolCall = evalData.choices[0].message.tool_calls?.[0];
-    if (!toolCall || toolCall.function.name !== "submit_evaluation") {
-      console.error("No valid tool call in response");
-      throw new Error("Failed to get structured evaluation from AI");
-    }
+    // Extract evaluation from function call or content fallback
+    const choice = evalData.choices[0];
+    const toolCall = choice.message.tool_calls?.[0];
 
     let evaluation;
-    try {
-      evaluation = JSON.parse(toolCall.function.arguments);
-      console.log("Evaluation parsed successfully");
-    } catch (parseError) {
-      console.error("JSON parse error:", parseError);
-      console.error("Tool call arguments:", toolCall.function.arguments);
-      throw new Error("Failed to parse evaluation response");
+    if (toolCall && toolCall.function.name === "submit_evaluation") {
+      try {
+        evaluation = JSON.parse(toolCall.function.arguments);
+        console.log("Evaluation parsed from tool call");
+      } catch (parseError) {
+        console.error("Tool call JSON parse error:", parseError);
+        console.error("Tool call arguments:", toolCall.function.arguments);
+        throw new Error("Failed to parse evaluation response");
+      }
+    } else {
+      // Fallback: try to parse message content as JSON
+      let raw = choice.message.content ?? "";
+      if (typeof raw !== "string") raw = String(raw);
+      raw = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      try {
+        evaluation = JSON.parse(raw);
+        console.log("Evaluation parsed from content fallback");
+      } catch (e) {
+        console.error("No valid tool call and content not JSON");
+        throw new Error("Failed to get structured evaluation from AI");
+      }
     }
 
     console.log("Storing evaluation results...");
