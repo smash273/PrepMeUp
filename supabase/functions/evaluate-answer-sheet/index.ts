@@ -80,50 +80,51 @@ serve(async (req) => {
     const isPDF = fileExtension === 'pdf';
     const mimeType = isPDF ? 'application/pdf' : 'image/jpeg';
 
-    console.log("Extracting text from answer sheet using Gemini Vision...");
+    if (body.answerSheetText && typeof body.answerSheetText === 'string' && body.answerSheetText.trim().length > 0) {
+      console.log("Using provided answer sheet text (client-extracted)");
+    } else {
+      console.log("Extracting text from answer sheet using Gemini Vision...");
 
-    // Extract text from answer sheet using Gemini
-    const ocrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${lovableApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Extract all text from this answer sheet document. Identify question numbers and student's answers. Return in format: Q1: [student answer], Q2: [student answer], etc."
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64AnswerSheet}`
-                }
-              }
-            ]
-          }
-        ],
-      }),
-    });
+      // Extract text from answer sheet using Gemini
+      const ocrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${lovableApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-pro",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Extract all text from this answer sheet document. Identify question numbers and student's answers. Return in format: Q1: [student answer], Q2: [student answer], etc." },
+                { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64AnswerSheet}` } }
+              ]
+            }
+          ],
+        }),
+      });
 
-    if (!ocrResponse.ok) {
-      const errorText = await ocrResponse.text();
-      console.error("OCR failed:", errorText);
-      throw new Error("Failed to extract text from answer sheet");
+      if (!ocrResponse.ok) {
+        const errorText = await ocrResponse.text();
+        console.error("OCR failed:", errorText);
+        throw new Error("Failed to extract text from answer sheet");
+      }
+
+      const ocrData = await ocrResponse.json();
+      body.answerSheetText = ocrData.choices[0].message.content;
     }
 
-    const ocrData = await ocrResponse.json();
-    const ocrText = ocrData.choices[0].message.content;
+    const ocrText = String(body.answerSheetText || "");
     console.log("Extracted text length:", ocrText.length);
 
     // Handle answer key if provided
     let answerKeyText = null;
-    if (submission.answer_key_path) {
+    if (body.answerKeyText && typeof body.answerKeyText === 'string' && body.answerKeyText.trim().length > 0) {
+      console.log("Using provided answer key text (client-extracted)");
+      answerKeyText = body.answerKeyText;
+    } else if (submission.answer_key_path) {
       console.log("Processing answer key:", submission.answer_key_path);
       
       const { data: answerKeyData, error: keyDownloadError } = await supabase.storage
@@ -160,16 +161,8 @@ serve(async (req) => {
               {
                 role: "user",
                 content: [
-                  {
-                    type: "text",
-                    text: "Extract text from this answer key/question paper. Identify questions and their expected answers if present. Return in structured format."
-                  },
-                  {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:${keyMimeType};base64,${base64AnswerKey}`
-                    }
-                  }
+                  { type: "text", text: "Extract text from this answer key/question paper. Identify questions and their expected answers if present. Return in structured format." },
+                  { type: "image_url", image_url: { url: `data:${keyMimeType};base64,${base64AnswerKey}` } }
                 ]
               }
             ],
@@ -418,8 +411,8 @@ Analyze the student's performance and provide detailed evaluation including:
     }
     
     return new Response(
-      JSON.stringify({ error: "Unable to process answer sheet. Please try again." }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ success: false, error: "Unable to process answer sheet. Please try again." }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

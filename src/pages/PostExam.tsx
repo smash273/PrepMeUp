@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Upload, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect } from "react";
+import * as pdfjsLib from "pdfjs-dist";
 
 export default function PostExam() {
   const [courses, setCourses] = useState<any[]>([]);
@@ -28,6 +29,29 @@ export default function PostExam() {
       .select("*")
       .order("created_at", { ascending: false });
     setCourses(data || []);
+  };
+
+  // Extract text from PDF using pdfjs-dist
+  const extractPdfText = async (file: File) => {
+    try {
+      // @ts-ignore - worker global
+      (pdfjsLib as any).GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.296/build/pdf.worker.min.js";
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      let fullText = "";
+      const pageCount = Math.min(pdf.numPages, 20); // cap to 20 pages for performance
+      for (let i = 1; i <= pageCount; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map((it: any) => (it.str || "")).join(" ");
+        fullText += `\n\n--- Page ${i} ---\n` + pageText;
+      }
+      return fullText.trim();
+    } catch (e) {
+      console.error("PDF extraction failed", e);
+      return "";
+    }
   };
 
   const handleUpload = async () => {
@@ -79,12 +103,24 @@ export default function PostExam() {
 
       if (submissionError) throw submissionError;
 
-      // Trigger evaluation
-      const { error: evalError } = await supabase.functions.invoke("evaluate-answer-sheet", {
-        body: { submissionId: submission.id },
+      // Trigger evaluation with optional pre-extracted PDF text
+      let sheetText = "";
+      let keyText = "";
+      if (answerSheet && answerSheet.type.includes("pdf")) {
+        sheetText = await extractPdfText(answerSheet);
+      }
+      if (answerKey && answerKey.type.includes("pdf")) {
+        keyText = await extractPdfText(answerKey);
+      }
+
+      const { data: evalData, error: evalError } = await supabase.functions.invoke("evaluate-answer-sheet", {
+        body: { submissionId: submission.id, answerSheetText: sheetText, answerKeyText: keyText },
       });
 
       if (evalError) throw evalError;
+      if (evalData && evalData.success === false) {
+        toast({ variant: "destructive", title: "Evaluation error", description: evalData.error || "Failed to evaluate. Please try again." });
+      }
 
       toast({
         title: "Upload successful!",
