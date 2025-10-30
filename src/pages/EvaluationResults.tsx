@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, TrendingUp, TrendingDown, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import * as pdfjsLib from "pdfjs-dist";
 
 export default function EvaluationResults() {
   const { submissionId } = useParams();
@@ -15,6 +16,79 @@ export default function EvaluationResults() {
   const [loading, setLoading] = useState(true);
   const [evaluation, setEvaluation] = useState<any>(null);
   const [submission, setSubmission] = useState<any>(null);
+  const [hasRetried, setHasRetried] = useState(false);
+
+  // Extract text from a PDF Blob using pdfjs-dist
+  const extractPdfTextFromBlob = async (blob: Blob) => {
+    try {
+      // @ts-ignore worker global
+      (pdfjsLib as any).GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.296/build/pdf.worker.min.js";
+      const arrayBuffer = await blob.arrayBuffer();
+      const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      let fullText = "";
+      const pageCount = Math.min(pdf.numPages, 20);
+      for (let i = 1; i <= pageCount; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items.map((it: any) => (it.str || "")).join(" ");
+        fullText += `\n\n--- Page ${i} ---\n` + pageText;
+      }
+      return fullText.trim();
+    } catch (e) {
+      console.error("Client PDF extraction failed", e);
+      return "";
+    }
+  };
+
+  const handleRetry = async () => {
+    if (!submissionId) return;
+    try {
+      setLoading(true);
+      setSubmission((prev: any) => prev ? { ...prev, processing_status: "processing" } : prev);
+
+      // Download files owned by user
+      let sheetText = "";
+      let keyText = "";
+
+      if (submission?.answer_sheet_path) {
+        const { data: sheetBlob } = await supabase.storage.from("answer-sheets").download(submission.answer_sheet_path);
+        if (sheetBlob) {
+          if (submission.answer_sheet_path.toLowerCase().endsWith('.pdf')) {
+            sheetText = await extractPdfTextFromBlob(sheetBlob);
+          }
+        }
+      }
+
+      if (submission?.answer_key_path) {
+        const { data: keyBlob } = await supabase.storage.from("answer-keys").download(submission.answer_key_path);
+        if (keyBlob && submission.answer_key_path.toLowerCase().endsWith('.pdf')) {
+          keyText = await extractPdfTextFromBlob(keyBlob);
+        }
+      }
+
+      const { data, error } = await supabase.functions.invoke("evaluate-answer-sheet", {
+        body: { submissionId, answerSheetText: sheetText || undefined, answerKeyText: keyText || undefined },
+      });
+
+      if (error) {
+        console.error("Retry evaluation error", error);
+        toast({ variant: "destructive", title: "Evaluation failed", description: error.message || "Please try again" });
+      } else if (data && data.success === false) {
+        toast({ variant: "destructive", title: "Evaluation failed", description: data.error || "Please try again" });
+      } else {
+        toast({ title: "Evaluation started", description: "We’ll refresh when it’s ready." });
+      }
+
+      // Poll immediately once
+      await fetchEvaluationResults();
+    } catch (e: any) {
+      console.error(e);
+      toast({ variant: "destructive", title: "Retry failed", description: e.message });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchEvaluationResults();
@@ -63,6 +137,12 @@ export default function EvaluationResults() {
         });
         setLoading(false);
       } else if (subData.processing_status === "failed") {
+        if (!hasRetried) {
+          setHasRetried(true);
+          // Attempt a one-time auto-retry
+          await handleRetry();
+          return;
+        }
         toast({
           variant: "destructive",
           title: "Evaluation failed",
@@ -98,15 +178,18 @@ export default function EvaluationResults() {
   if (!evaluation) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-purple-950/20 to-background flex items-center justify-center">
-        <Card className="p-8 text-center">
-          <XCircle className="h-16 w-16 text-destructive mx-auto mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Evaluation Not Available</h2>
-          <p className="text-muted-foreground mb-4">
-            Unable to load evaluation results.
-          </p>
-          <Button onClick={() => navigate("/post-exam")}>
-            Try Again
-          </Button>
+        <Card className="p-8 text-center space-y-4">
+          <XCircle className="h-16 w-16 text-destructive mx-auto" />
+          <h2 className="text-2xl font-bold">Evaluation Not Available</h2>
+          <p className="text-muted-foreground">Unable to load evaluation results.</p>
+          <div className="flex items-center justify-center gap-3">
+            <Button variant="outline" onClick={() => navigate("/post-exam")}>Re-upload</Button>
+            {submission?.processing_status === "failed" && (
+              <Button onClick={handleRetry}>
+                Retry Evaluation
+              </Button>
+            )}
+          </div>
         </Card>
       </div>
     );
