@@ -189,37 +189,16 @@ Available materials: ${materials.map(m => m.file_name).join(", ")}
     }
 
     evaluationPrompt += `
-Provide a comprehensive evaluation as a JSON object with this structure:
-{
-  "total_score": <number>,
-  "max_score": <number>,
-  "weak_areas": ["area1", "area2"],
-  "improvement_suggestions": "<detailed suggestions>",
-  "detailed_analytics": {
-    "questions": [
-      {
-        "question_number": "Q1",
-        "question_text": "What is...",
-        "student_answer": "Student wrote...",
-        "expected_answer": "Correct answer should be...",
-        "score": 7,
-        "max_score": 10,
-        "feedback": "Good effort but...",
-        "improvement_tip": "To improve, focus on..."
-      }
-    ],
-    "concept_wise_performance": {
-      "Concept A": {"score": 15, "max_score": 20, "percentage": 75},
-      "Concept B": {"score": 8, "max_score": 15, "percentage": 53.33}
-    },
-    "strengths": ["Good understanding of...", "Clear explanation of..."],
-    "areas_to_focus": ["Review topic X", "Practice more on Y"]
-  }
-}
+Analyze the student's performance and provide detailed evaluation including:
+- Overall score and maximum possible score
+- Weak areas where student needs improvement
+- Detailed improvement suggestions
+- Question-by-question analysis with student's answer, expected answer, score, feedback, and improvement tips
+- Concept-wise performance breakdown
+- Student's strengths and areas to focus on
+`;
 
-IMPORTANT: Return ONLY valid JSON, no markdown or explanation.`;
-
-    // Use AI to evaluate
+    // Use AI with function calling to get structured output
     const evalResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -231,14 +210,91 @@ IMPORTANT: Return ONLY valid JSON, no markdown or explanation.`;
         messages: [
           {
             role: "system",
-            content: "You are an expert exam evaluator. Always respond with valid JSON only, no markdown formatting."
+            content: "You are an expert exam evaluator. Analyze student answers and provide comprehensive feedback."
           },
           {
             role: "user",
             content: evaluationPrompt
           }
         ],
-        temperature: 0.3,
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "submit_evaluation",
+              description: "Submit the comprehensive evaluation results",
+              parameters: {
+                type: "object",
+                properties: {
+                  total_score: {
+                    type: "number",
+                    description: "Total score obtained by student"
+                  },
+                  max_score: {
+                    type: "number",
+                    description: "Maximum possible score"
+                  },
+                  weak_areas: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "List of weak areas"
+                  },
+                  improvement_suggestions: {
+                    type: "string",
+                    description: "Detailed suggestions for improvement"
+                  },
+                  detailed_analytics: {
+                    type: "object",
+                    properties: {
+                      questions: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            question_number: { type: "string" },
+                            question_text: { type: "string" },
+                            student_answer: { type: "string" },
+                            expected_answer: { type: "string" },
+                            score: { type: "number" },
+                            max_score: { type: "number" },
+                            feedback: { type: "string" },
+                            improvement_tip: { type: "string" }
+                          },
+                          required: ["question_number", "question_text", "student_answer", "expected_answer", "score", "max_score", "feedback", "improvement_tip"]
+                        }
+                      },
+                      concept_wise_performance: {
+                        type: "object",
+                        additionalProperties: {
+                          type: "object",
+                          properties: {
+                            score: { type: "number" },
+                            max_score: { type: "number" },
+                            percentage: { type: "number" }
+                          }
+                        }
+                      },
+                      strengths: {
+                        type: "array",
+                        items: { type: "string" }
+                      },
+                      areas_to_focus: {
+                        type: "array",
+                        items: { type: "string" }
+                      }
+                    },
+                    required: ["questions", "concept_wise_performance", "strengths", "areas_to_focus"]
+                  }
+                },
+                required: ["total_score", "max_score", "weak_areas", "improvement_suggestions", "detailed_analytics"]
+              }
+            }
+          }
+        ],
+        tool_choice: {
+          type: "function",
+          function: { name: "submit_evaluation" }
+        }
       }),
     });
 
@@ -249,19 +305,22 @@ IMPORTANT: Return ONLY valid JSON, no markdown or explanation.`;
     }
 
     const evalData = await evalResponse.json();
-    let rawContent = evalData.choices[0].message.content;
+    console.log("AI response received");
     
-    console.log("Raw AI response preview:", rawContent.substring(0, 200));
-    
-    // Strip markdown code blocks if present
-    rawContent = rawContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    
+    // Extract evaluation from function call
+    const toolCall = evalData.choices[0].message.tool_calls?.[0];
+    if (!toolCall || toolCall.function.name !== "submit_evaluation") {
+      console.error("No valid tool call in response");
+      throw new Error("Failed to get structured evaluation from AI");
+    }
+
     let evaluation;
     try {
-      evaluation = JSON.parse(rawContent);
+      evaluation = JSON.parse(toolCall.function.arguments);
+      console.log("Evaluation parsed successfully");
     } catch (parseError) {
       console.error("JSON parse error:", parseError);
-      console.error("Raw content:", rawContent);
+      console.error("Tool call arguments:", toolCall.function.arguments);
       throw new Error("Failed to parse evaluation response");
     }
 
