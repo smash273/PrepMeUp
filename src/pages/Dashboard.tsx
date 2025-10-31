@@ -10,6 +10,7 @@ import CourseSelector from "@/components/dashboard/CourseSelector";
 
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
+  const [userName, setUserName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [courses, setCourses] = useState<any[]>([]);
   const [courseSelectorOpen, setCourseSelectorOpen] = useState(false);
@@ -33,6 +34,18 @@ export default function Dashboard() {
       return;
     }
     setUser(user);
+    
+    // Fetch user's full name from profiles
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", user.id)
+      .single();
+    
+    if (profile?.full_name) {
+      setUserName(profile.full_name);
+    }
+    
     setLoading(false);
   };
 
@@ -90,7 +103,7 @@ export default function Dashboard() {
 
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2">Welcome back!</h2>
+          <h2 className="text-3xl font-bold mb-2">Welcome {userName || ""}!</h2>
           <p className="text-muted-foreground">Ready to ace your exams?</p>
         </div>
 
