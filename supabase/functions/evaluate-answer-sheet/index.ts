@@ -87,7 +87,7 @@ serve(async (req) => {
     } else if (Array.isArray(body.answerSheetImages) && body.answerSheetImages.length > 0) {
       console.log(`Extracting text from ${body.answerSheetImages.length} provided page images...`);
       const contentParts: any[] = [
-        { type: "text", text: "Extract all text from these answer sheet page images. Identify question numbers and student's answers. Return in format: Q1: [student answer], Q2: [student answer], etc." }
+        { type: "text", text: "You are an expert OCR system. Extract ALL text from these answer sheet images with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Preserve the exact structure and formatting. Identify question numbers (Q1, Q2, etc.) and the student's complete answers for each question. If there are diagrams, describe them. If there are mathematical equations, transcribe them accurately. Return the extracted text in this exact format:\n\nQ1: [Complete student answer including all text, calculations, and work shown]\nQ2: [Complete student answer including all text, calculations, and work shown]\n\nBe extremely thorough and accurate. Do not skip any content." }
       ];
       for (const img of body.answerSheetImages.slice(0, 5)) {
         contentParts.push({ type: "image_url", image_url: { url: img } });
@@ -124,7 +124,7 @@ serve(async (req) => {
             {
               role: "user",
               content: [
-                { type: "text", text: "Extract all text from this answer sheet image. Identify question numbers and student's answers. Return in format: Q1: [student answer], Q2: [student answer], etc." },
+                { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer sheet image with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Preserve the exact structure and formatting. Identify question numbers (Q1, Q2, etc.) and the student's complete answers for each question. If there are diagrams, describe them. If there are mathematical equations, transcribe them accurately. Return the extracted text in this exact format:\n\nQ1: [Complete student answer including all text, calculations, and work shown]\nQ2: [Complete student answer including all text, calculations, and work shown]\n\nBe extremely thorough and accurate. Do not skip any content." },
                 { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64AnswerSheet}` } }
               ]
             }
@@ -152,7 +152,7 @@ serve(async (req) => {
     } else if (Array.isArray(body.answerKeyImages) && body.answerKeyImages.length > 0) {
       console.log(`Extracting text from ${body.answerKeyImages.length} provided answer key images...`);
       const contentParts: any[] = [
-        { type: "text", text: "Extract text from this answer key/question paper. Identify questions and their expected answers if present. Return in structured format." }
+        { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer key/question paper with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Identify each question and its expected answer (if provided). If only questions are present without answers, extract the questions accurately. Return in structured format:\n\nQ1: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nQ2: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nBe extremely thorough and accurate." }
       ];
       for (const img of body.answerKeyImages.slice(0, 5)) {
         contentParts.push({ type: "image_url", image_url: { url: img } });
@@ -205,7 +205,7 @@ serve(async (req) => {
                 {
                   role: "user",
                   content: [
-                    { type: "text", text: "Extract text from this answer key/question paper. Identify questions and their expected answers if present. Return in structured format." },
+                    { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer key/question paper with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Identify each question and its expected answer (if provided). If only questions are present without answers, extract the questions accurately. Return in structured format:\n\nQ1: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nQ2: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nBe extremely thorough and accurate." },
                     { type: "image_url", image_url: { url: `data:${keyMimeType};base64,${base64AnswerKey}` } }
                   ]
                 }
