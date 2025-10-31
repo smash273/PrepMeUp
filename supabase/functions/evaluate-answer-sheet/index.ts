@@ -108,10 +108,7 @@ serve(async (req) => {
       console.log("Extracting text from answer sheet using Gemini Vision...");
 
       // Extract text from answer sheet using Gemini (supports image files; PDFs should be pre-extracted client-side)
-      if (isPDF) {
-        console.error("PDF provided without extracted text or images");
-        throw new Error("Failed to extract text from answer sheet");
-      }
+      // Allow PDFs to be processed directly by Gemini by passing as data URL
       const ocrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -191,35 +188,31 @@ serve(async (req) => {
         const keyIsPDF = keyExtension === 'pdf';
         const keyMimeType = keyIsPDF ? 'application/pdf' : 'image/jpeg';
 
-        // Extract text from answer key (only images; PDFs should be pre-extracted)
-        if (!keyIsPDF) {
-          const keyOcrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${lovableApiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "google/gemini-2.5-pro",
-              messages: [
-                {
-                  role: "user",
-                  content: [
-                    { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer key/question paper with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Identify each question and its expected answer (if provided). If only questions are present without answers, extract the questions accurately. Return in structured format:\n\nQ1: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nQ2: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nBe extremely thorough and accurate." },
-                    { type: "image_url", image_url: { url: `data:${keyMimeType};base64,${base64AnswerKey}` } }
-                  ]
-                }
-              ],
-            }),
-          });
-  
-          if (keyOcrResponse.ok) {
-            const keyOcrData = await keyOcrResponse.json();
-            answerKeyText = keyOcrData.choices[0].message.content || null;
-            if (answerKeyText) console.log("Extracted answer key text length:", answerKeyText.length);
-          }
-        } else {
-          console.error("Answer key is PDF without extracted text or images; skipping server OCR");
+        // Extract text from answer key (support images and PDFs by passing as data URL)
+        const keyOcrResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${lovableApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-pro",
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer key/question paper with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Identify each question and its expected answer (if provided). If only questions are present without answers, extract the questions accurately. Return in structured format:\n\nQ1: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nQ2: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nBe extremely thorough and accurate." },
+                  { type: "image_url", image_url: { url: `data:${keyMimeType};base64,${base64AnswerKey}` } }
+                ]
+              }
+            ],
+          }),
+        });
+
+        if (keyOcrResponse.ok) {
+          const keyOcrData = await keyOcrResponse.json();
+          answerKeyText = keyOcrData.choices[0].message.content || null;
+          if (answerKeyText) console.log("Extracted answer key text length:", answerKeyText.length);
         }
       }
     }

@@ -92,10 +92,10 @@ export default function PostExam() {
       const arrayBuffer = await file.arrayBuffer();
       const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
-      const pageCount = Math.min(pdf.numPages, 3);
+      const pageCount = Math.min(pdf.numPages, 5);
       for (let i = 1; i <= pageCount; i++) {
         const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 1.5 });
+        const viewport = page.getViewport({ scale: 2.0 });
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         if (!ctx) continue;
