@@ -21,10 +21,11 @@ export default function EvaluationResults() {
   // Extract text from a PDF Blob using pdfjs-dist
   const extractPdfTextFromBlob = async (blob: Blob) => {
     try {
-      // @ts-ignore worker global
-      (pdfjsLib as any).GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.296/build/pdf.worker.min.js";
+      const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const workerUrl: any = (await import('pdfjs-dist/legacy/build/pdf.worker.mjs?url')).default;
+      if (pdfjs?.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
       const arrayBuffer = await blob.arrayBuffer();
-      const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
       let fullText = "";
       const pageCount = Math.min(pdf.numPages, 20);
@@ -45,10 +46,11 @@ export default function EvaluationResults() {
   const renderPdfBlobToImages = async (blob: Blob) => {
     const images: string[] = [];
     try {
-      // @ts-ignore
-      (pdfjsLib as any).GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.296/build/pdf.worker.min.js";
+      const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const workerUrl: any = (await import('pdfjs-dist/legacy/build/pdf.worker.mjs?url')).default;
+      if (pdfjs?.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
       const arrayBuffer = await blob.arrayBuffer();
-      const loadingTask = (pdfjsLib as any).getDocument({ data: arrayBuffer });
+      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
       const pageCount = Math.min(pdf.numPages, 3);
       for (let i = 1; i <= pageCount; i++) {
