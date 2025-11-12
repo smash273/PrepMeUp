@@ -8,14 +8,14 @@ import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ArrowLeft } from "lucide-react";
 
-type AuthMode = "login" | "signup" | "verify-otp" | "forgot-password";
+type AuthMode = "login" | "signup" | "verify-code" | "forgot-password";
 
 export default function Auth() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [otp, setOtp] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -39,38 +39,37 @@ export default function Auth() {
       return;
     }
 
-    if (password.length < 6) {
-      toast({
-        variant: "destructive",
-        title: "Password too short",
-        description: "Password must be at least 6 characters.",
-      });
-      setLoading(false);
-      return;
-    }
-
     try {
-      const { error } = await supabase.auth.signUp({
+      // Create user account (unconfirmed)
+      const { error: signupError } = await supabase.auth.signUp({
         email: normalizedEmail,
         password,
         options: {
           data: { full_name: fullName },
-          emailRedirectTo: `${window.location.origin}/dashboard`,
         },
       });
 
-      if (error) throw error;
+      if (signupError) throw signupError;
+
+      // Send verification code
+      const { error: sendError } = await supabase.functions.invoke("send-verification-code", {
+        body: { email: normalizedEmail },
+      });
+
+      if (sendError) throw sendError;
 
       toast({
-        title: "Verification code sent!",
-        description: "Please check your email for the OTP code.",
+        title: "Verification Code Sent",
+        description: "Please check your email for the 6-digit verification code (expires in 2 minutes)",
       });
-      setMode("verify-otp");
+
+      setMode("verify-code");
     } catch (error: any) {
+      console.error("Signup error:", error);
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error.message,
+        title: "Signup failed",
+        description: error.message || "An error occurred during signup",
       });
     } finally {
       setLoading(false);
@@ -156,58 +155,66 @@ export default function Auth() {
     }
   };
 
-  const handleVerifyOTP = async (e: React.FormEvent) => {
+  const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     const normalizedEmail = normalizeEmail(email);
 
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        email: normalizedEmail,
-        token: otp,
-        type: "signup",
+      // Verify the code via edge function
+      const { data, error } = await supabase.functions.invoke("verify-code", {
+        body: { email: normalizedEmail, code: verificationCode },
       });
 
       if (error) throw error;
 
+      if (!data?.success) {
+        throw new Error(data?.error || "Verification failed");
+      }
+
       toast({
-        title: "Account verified!",
-        description: "You've been logged in successfully.",
+        title: "Email Verified",
+        description: "Your email has been verified successfully! Please log in.",
       });
-      navigate("/dashboard");
+
+      // Reset form and switch to login
+      setMode("login");
+      setVerificationCode("");
+      setPassword("");
     } catch (error: any) {
+      console.error("Verification error:", error);
       toast({
         variant: "destructive",
-        title: "Invalid OTP",
-        description: error.message || "Please check your code and try again.",
+        title: "Verification Failed",
+        description: error.message || "Invalid or expired verification code",
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResendOTP = async () => {
+  const handleResendCode = async () => {
     setLoading(true);
     const normalizedEmail = normalizeEmail(email);
 
     try {
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email: normalizedEmail,
+      const { error } = await supabase.functions.invoke("send-verification-code", {
+        body: { email: normalizedEmail },
       });
 
       if (error) throw error;
 
       toast({
-        title: "Code resent!",
-        description: "Please check your email for the new OTP code.",
+        title: "Code Resent",
+        description: "A new verification code has been sent to your email (expires in 2 minutes)",
       });
     } catch (error: any) {
+      console.error("Resend error:", error);
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error.message,
+        title: "Resend Failed",
+        description: error.message || "Failed to resend verification code",
       });
     } finally {
       setLoading(false);
@@ -218,7 +225,7 @@ export default function Auth() {
     setEmail("");
     setPassword("");
     setFullName("");
-    setOtp("");
+    setVerificationCode("");
     setMode("login");
   };
 
@@ -230,20 +237,20 @@ export default function Auth() {
           <p className="text-muted-foreground">
             {mode === "signup" && "Create your account"}
             {mode === "login" && "Sign in to your account"}
-            {mode === "verify-otp" && "Verify your email"}
+            {mode === "verify-code" && "Verify your email"}
             {mode === "forgot-password" && "Reset your password"}
           </p>
         </div>
 
-        {mode === "verify-otp" ? (
-          <form onSubmit={handleVerifyOTP} className="space-y-4">
+        {mode === "verify-code" ? (
+          <form onSubmit={handleVerifyCode} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="otp">Verification Code</Label>
+              <Label htmlFor="verificationCode">Verification Code</Label>
               <Input
-                id="otp"
+                id="verificationCode"
                 type="text"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 required
                 placeholder="Enter 6-digit code"
                 maxLength={6}
@@ -258,7 +265,7 @@ export default function Auth() {
               type="submit"
               className="w-full"
               variant="hero"
-              disabled={loading || otp.length !== 6}
+              disabled={loading || verificationCode.length !== 6}
             >
               {loading ? (
                 <>
@@ -281,7 +288,7 @@ export default function Auth() {
               </button>
               <button
                 type="button"
-                onClick={handleResendOTP}
+                onClick={handleResendCode}
                 disabled={loading}
                 className="text-primary hover:underline"
               >
@@ -441,7 +448,7 @@ export default function Auth() {
           </form>
         )}
 
-        {mode !== "verify-otp" && (
+        {mode !== "verify-code" && (
           <div className="mt-6 space-y-3 text-center">
             {mode === "login" && (
               <>
@@ -474,10 +481,9 @@ export default function Auth() {
               <button
                 type="button"
                 onClick={() => setMode("login")}
-                className="text-sm text-primary hover:underline flex items-center justify-center gap-1"
+                className="text-sm text-primary hover:underline"
               >
-                <ArrowLeft className="h-4 w-4" />
-                Back to login
+                Back to Sign In
               </button>
             )}
           </div>
