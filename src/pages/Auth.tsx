@@ -8,25 +8,20 @@ import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ArrowLeft } from "lucide-react";
 
-type AuthMode = "login" | "signup" | "verify-code" | "forgot-password";
+type AuthMode = "login" | "signup" | "verify-otp" | "forgot-password";
 
 export default function Auth() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [verificationCode, setVerificationCode] = useState("");
+  const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const VIT_EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$/i;
-  const TEST_EMAIL = "paladugurajdeep@gmail.com";
   const normalizeEmail = (value: string) => value.trim().toLowerCase();
-  const isValidEmail = (email: string) => {
-    const normalized = normalizeEmail(email);
-    return VIT_EMAIL_REGEX.test(normalized) || normalized === TEST_EMAIL;
-  };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,47 +29,48 @@ export default function Auth() {
 
     const normalizedEmail = normalizeEmail(email);
 
-    if (!isValidEmail(normalizedEmail)) {
+    if (!VIT_EMAIL_REGEX.test(normalizedEmail)) {
       toast({
         variant: "destructive",
         title: "Invalid email domain",
-        description: "Please use your VIT student email (@vitstudent.ac.in)",
+        description: "Please use your VIT student email (…@vitstudent.ac.in).",
+      });
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      toast({
+        variant: "destructive",
+        title: "Password too short",
+        description: "Password must be at least 6 characters.",
       });
       setLoading(false);
       return;
     }
 
     try {
-      // Create user account (unconfirmed)
-      const { error: signupError } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email: normalizedEmail,
         password,
         options: {
           data: { full_name: fullName },
+          emailRedirectTo: `${window.location.origin}/dashboard`,
         },
       });
 
-      if (signupError) throw signupError;
-
-      // Send verification code
-      const { error: sendError } = await supabase.functions.invoke("send-verification-code", {
-        body: { email: normalizedEmail },
-      });
-
-      if (sendError) throw sendError;
+      if (error) throw error;
 
       toast({
-        title: "Verification Code Sent",
-        description: "Please check your email for the 6-digit verification code (expires in 2 minutes)",
+        title: "Verification code sent!",
+        description: "Please check your email for the OTP code.",
       });
-
-      setMode("verify-code");
+      setMode("verify-otp");
     } catch (error: any) {
-      console.error("Signup error:", error);
       toast({
         variant: "destructive",
-        title: "Signup failed",
-        description: error.message || "An error occurred during signup",
+        title: "Error",
+        description: error.message,
       });
     } finally {
       setLoading(false);
@@ -87,11 +83,11 @@ export default function Auth() {
 
     const normalizedEmail = normalizeEmail(email);
 
-    if (!isValidEmail(normalizedEmail)) {
+    if (!VIT_EMAIL_REGEX.test(normalizedEmail)) {
       toast({
         variant: "destructive",
         title: "Invalid email domain",
-        description: "Please use your VIT student email (@vitstudent.ac.in)",
+        description: "Please use your VIT student email (…@vitstudent.ac.in).",
       });
       setLoading(false);
       return;
@@ -127,11 +123,11 @@ export default function Auth() {
 
     const normalizedEmail = normalizeEmail(email);
 
-    if (!isValidEmail(normalizedEmail)) {
+    if (!VIT_EMAIL_REGEX.test(normalizedEmail)) {
       toast({
         variant: "destructive",
         title: "Invalid email domain",
-        description: "Please use your VIT student email (@vitstudent.ac.in)",
+        description: "Please use your VIT student email (…@vitstudent.ac.in).",
       });
       setLoading(false);
       return;
@@ -160,66 +156,58 @@ export default function Auth() {
     }
   };
 
-  const handleVerifyCode = async (e: React.FormEvent) => {
+  const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     const normalizedEmail = normalizeEmail(email);
 
     try {
-      // Verify the code via edge function
-      const { data, error } = await supabase.functions.invoke("verify-code", {
-        body: { email: normalizedEmail, code: verificationCode },
+      const { error } = await supabase.auth.verifyOtp({
+        email: normalizedEmail,
+        token: otp,
+        type: "signup",
       });
 
       if (error) throw error;
 
-      if (!data?.success) {
-        throw new Error(data?.error || "Verification failed");
-      }
-
       toast({
-        title: "Email Verified",
-        description: "Your email has been verified successfully! Please log in.",
+        title: "Account verified!",
+        description: "You've been logged in successfully.",
       });
-
-      // Reset form and switch to login
-      setMode("login");
-      setVerificationCode("");
-      setPassword("");
+      navigate("/dashboard");
     } catch (error: any) {
-      console.error("Verification error:", error);
       toast({
         variant: "destructive",
-        title: "Verification Failed",
-        description: error.message || "Invalid or expired verification code",
+        title: "Invalid OTP",
+        description: error.message || "Please check your code and try again.",
       });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResendCode = async () => {
+  const handleResendOTP = async () => {
     setLoading(true);
     const normalizedEmail = normalizeEmail(email);
 
     try {
-      const { error } = await supabase.functions.invoke("send-verification-code", {
-        body: { email: normalizedEmail },
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: normalizedEmail,
       });
 
       if (error) throw error;
 
       toast({
-        title: "Code Resent",
-        description: "A new verification code has been sent to your email (expires in 2 minutes)",
+        title: "Code resent!",
+        description: "Please check your email for the new OTP code.",
       });
     } catch (error: any) {
-      console.error("Resend error:", error);
       toast({
         variant: "destructive",
-        title: "Resend Failed",
-        description: error.message || "Failed to resend verification code",
+        title: "Error",
+        description: error.message,
       });
     } finally {
       setLoading(false);
@@ -230,7 +218,7 @@ export default function Auth() {
     setEmail("");
     setPassword("");
     setFullName("");
-    setVerificationCode("");
+    setOtp("");
     setMode("login");
   };
 
@@ -242,20 +230,20 @@ export default function Auth() {
           <p className="text-muted-foreground">
             {mode === "signup" && "Create your account"}
             {mode === "login" && "Sign in to your account"}
-            {mode === "verify-code" && "Verify your email"}
+            {mode === "verify-otp" && "Verify your email"}
             {mode === "forgot-password" && "Reset your password"}
           </p>
         </div>
 
-        {mode === "verify-code" ? (
-          <form onSubmit={handleVerifyCode} className="space-y-4">
+        {mode === "verify-otp" ? (
+          <form onSubmit={handleVerifyOTP} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="verificationCode">Verification Code</Label>
+              <Label htmlFor="otp">Verification Code</Label>
               <Input
-                id="verificationCode"
+                id="otp"
                 type="text"
-                value={verificationCode}
-                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 required
                 placeholder="Enter 6-digit code"
                 maxLength={6}
@@ -270,7 +258,7 @@ export default function Auth() {
               type="submit"
               className="w-full"
               variant="hero"
-              disabled={loading || verificationCode.length !== 6}
+              disabled={loading || otp.length !== 6}
             >
               {loading ? (
                 <>
@@ -293,7 +281,7 @@ export default function Auth() {
               </button>
               <button
                 type="button"
-                onClick={handleResendCode}
+                onClick={handleResendOTP}
                 disabled={loading}
                 className="text-primary hover:underline"
               >
@@ -325,7 +313,8 @@ export default function Auth() {
                 onBlur={(e) => setEmail(normalizeEmail(e.target.value))}
                 required
                 placeholder="yourname@vitstudent.ac.in"
-                title="Use your VIT student email (@vitstudent.ac.in)"
+                pattern="^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$"
+                title="Use your VIT student email (…@vitstudent.ac.in)"
                 autoComplete="email"
               />
               <p className="text-xs text-muted-foreground">
@@ -378,7 +367,8 @@ export default function Auth() {
                 onBlur={(e) => setEmail(normalizeEmail(e.target.value))}
                 required
                 placeholder="yourname@vitstudent.ac.in"
-                title="Use your VIT student email (@vitstudent.ac.in)"
+                pattern="^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$"
+                title="Use your VIT student email (…@vitstudent.ac.in)"
                 autoComplete="email"
               />
             </div>
@@ -424,7 +414,8 @@ export default function Auth() {
                 onBlur={(e) => setEmail(normalizeEmail(e.target.value))}
                 required
                 placeholder="yourname@vitstudent.ac.in"
-                title="Use your VIT student email (@vitstudent.ac.in)"
+                pattern="^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$"
+                title="Use your VIT student email (…@vitstudent.ac.in)"
                 autoComplete="email"
               />
               <p className="text-xs text-muted-foreground">
@@ -450,7 +441,7 @@ export default function Auth() {
           </form>
         )}
 
-        {mode !== "verify-code" && (
+        {mode !== "verify-otp" && (
           <div className="mt-6 space-y-3 text-center">
             {mode === "login" && (
               <>
@@ -483,9 +474,10 @@ export default function Auth() {
               <button
                 type="button"
                 onClick={() => setMode("login")}
-                className="text-sm text-primary hover:underline"
+                className="text-sm text-primary hover:underline flex items-center justify-center gap-1"
               >
-                Back to Sign In
+                <ArrowLeft className="h-4 w-4" />
+                Back to login
               </button>
             )}
           </div>

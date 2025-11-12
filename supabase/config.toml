@@ -8,9 +8,3 @@ verify_jwt = true
 
 [functions.evaluate-answer-sheet]
 verify_jwt = true
-
-[functions.send-verification-code]
-verify_jwt = false
-
-[functions.verify-code]
-verify_jwt = false

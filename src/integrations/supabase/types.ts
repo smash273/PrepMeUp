@@ -450,39 +450,12 @@ export type Database = {
           },
         ]
       }
-      verification_codes: {
-        Row: {
-          code: string
-          created_at: string
-          email: string
-          expires_at: string
-          id: string
-          used: boolean
-        }
-        Insert: {
-          code: string
-          created_at?: string
-          email: string
-          expires_at: string
-          id?: string
-          used?: boolean
-        }
-        Update: {
-          code?: string
-          created_at?: string
-          email?: string
-          expires_at?: string
-          id?: string
-          used?: boolean
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      cleanup_expired_verification_codes: { Args: never; Returns: undefined }
+      [_ in never]: never
     }
     Enums: {
       question_type: "mcq" | "long_answer"
