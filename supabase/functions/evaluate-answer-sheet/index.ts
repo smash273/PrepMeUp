@@ -87,7 +87,7 @@ serve(async (req) => {
     } else if (Array.isArray(body.answerSheetImages) && body.answerSheetImages.length > 0) {
       console.log(`Extracting text from ${body.answerSheetImages.length} provided page images...`);
       const contentParts: any[] = [
-        { type: "text", text: "You are an expert OCR system. Extract ALL text from these answer sheet images with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Preserve the exact structure and formatting. Identify question numbers (Q1, Q2, etc.) and the student's complete answers for each question. If there are diagrams, describe them. If there are mathematical equations, transcribe them accurately. Return the extracted text in this exact format:\n\nQ1: [Complete student answer including all text, calculations, and work shown]\nQ2: [Complete student answer including all text, calculations, and work shown]\n\nBe extremely thorough and accurate. Do not skip any content." }
+        { type: "text", text: "You are an expert OCR system specialized in reading handwritten exam answers. Extract ALL text from these answer sheet images with PERFECT accuracy.\n\nCRITICAL INSTRUCTIONS:\n1. Read EVERY word, number, symbol, mathematical notation, and chemical formula\n2. Handle handwriting carefully - distinguish between similar-looking characters (1/l, 0/O, 2/Z, etc.)\n3. Preserve exact structure, line breaks, and formatting\n4. Identify question numbers (Q1, Q2, Q.1, Question 1, etc.) and their complete answers\n5. For mathematical equations: transcribe using standard notation (e.g., x^2, sqrt(x), ∫, Σ)\n6. For chemical formulas: preserve subscripts and superscripts (e.g., H2O, CO2, Fe³⁺)\n7. For diagrams/figures: provide detailed descriptions\n8. Include ALL working, rough work, calculations, and step-by-step solutions\n9. If text is unclear, make your best interpretation but note uncertainty with [unclear: possible text]\n\nReturn in this EXACT format:\n\nQ1: [Complete student answer with all text, calculations, diagrams, and work shown]\n\nQ2: [Complete student answer with all text, calculations, diagrams, and work shown]\n\nBe EXTREMELY thorough. Do not skip ANY content whatsoever." }
       ];
       for (const img of body.answerSheetImages.slice(0, 5)) {
         contentParts.push({ type: "image_url", image_url: { url: img } });
@@ -121,7 +121,7 @@ serve(async (req) => {
             {
               role: "user",
               content: [
-                { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer sheet image with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Preserve the exact structure and formatting. Identify question numbers (Q1, Q2, etc.) and the student's complete answers for each question. If there are diagrams, describe them. If there are mathematical equations, transcribe them accurately. Return the extracted text in this exact format:\n\nQ1: [Complete student answer including all text, calculations, and work shown]\nQ2: [Complete student answer including all text, calculations, and work shown]\n\nBe extremely thorough and accurate. Do not skip any content." },
+                { type: "text", text: "You are an expert OCR system specialized in reading handwritten exam answers. Extract ALL text from this answer sheet with PERFECT accuracy.\n\nCRITICAL INSTRUCTIONS:\n1. Read EVERY word, number, symbol, mathematical notation, and chemical formula\n2. Handle handwriting carefully - distinguish between similar-looking characters (1/l, 0/O, 2/Z, etc.)\n3. Preserve exact structure, line breaks, and formatting\n4. Identify question numbers (Q1, Q2, Q.1, Question 1, etc.) and their complete answers\n5. For mathematical equations: transcribe using standard notation (e.g., x^2, sqrt(x), ∫, Σ)\n6. For chemical formulas: preserve subscripts and superscripts (e.g., H2O, CO2, Fe³⁺)\n7. For diagrams/figures: provide detailed descriptions\n8. Include ALL working, rough work, calculations, and step-by-step solutions\n9. If text is unclear, make your best interpretation but note uncertainty with [unclear: possible text]\n\nReturn in this EXACT format:\n\nQ1: [Complete student answer with all text, calculations, diagrams, and work shown]\n\nQ2: [Complete student answer with all text, calculations, diagrams, and work shown]\n\nBe EXTREMELY thorough. Do not skip ANY content whatsoever." },
                 { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64AnswerSheet}` } }
               ]
             }
@@ -149,7 +149,7 @@ serve(async (req) => {
     } else if (Array.isArray(body.answerKeyImages) && body.answerKeyImages.length > 0) {
       console.log(`Extracting text from ${body.answerKeyImages.length} provided answer key images...`);
       const contentParts: any[] = [
-        { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer key/question paper with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Identify each question and its expected answer (if provided). If only questions are present without answers, extract the questions accurately. Return in structured format:\n\nQ1: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nQ2: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nBe extremely thorough and accurate." }
+        { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer key/question paper with PERFECT accuracy.\n\nCRITICAL INSTRUCTIONS:\n1. Read EVERY word, number, symbol, mathematical notation, and chemical formula\n2. Identify each question number and its full text\n3. Identify expected answers if provided\n4. For mathematical equations: use standard notation (x^2, sqrt(x), ∫, Σ)\n5. For chemical formulas: preserve subscripts/superscripts (H2O, CO2, Fe³⁺)\n6. Preserve exact structure and formatting\n7. If only questions (no answers), extract questions accurately\n\nReturn in this EXACT format:\n\nQ1: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nQ2: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nBe EXTREMELY thorough and accurate." }
       ];
       for (const img of body.answerKeyImages.slice(0, 5)) {
         contentParts.push({ type: "image_url", image_url: { url: img } });
@@ -201,7 +201,7 @@ serve(async (req) => {
               {
                 role: "user",
                 content: [
-                  { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer key/question paper with perfect accuracy. Carefully read every word, number, symbol, and mathematical notation. Identify each question and its expected answer (if provided). If only questions are present without answers, extract the questions accurately. Return in structured format:\n\nQ1: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nQ2: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nBe extremely thorough and accurate." },
+                  { type: "text", text: "You are an expert OCR system. Extract ALL text from this answer key/question paper with PERFECT accuracy.\n\nCRITICAL INSTRUCTIONS:\n1. Read EVERY word, number, symbol, mathematical notation, and chemical formula\n2. Identify each question number and its full text\n3. Identify expected answers if provided\n4. For mathematical equations: use standard notation (x^2, sqrt(x), ∫, Σ)\n5. For chemical formulas: preserve subscripts/superscripts (H2O, CO2, Fe³⁺)\n6. Preserve exact structure and formatting\n7. If only questions (no answers), extract questions accurately\n\nReturn in this EXACT format:\n\nQ1: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nQ2: [Question text]\nExpected Answer: [Answer if provided, or 'Not provided']\n\nBe EXTREMELY thorough and accurate." },
                   { type: "image_url", image_url: { url: `data:${keyMimeType};base64,${base64AnswerKey}` } }
                 ]
               }
@@ -269,7 +269,7 @@ Analyze the student's performance and provide detailed evaluation including:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-pro",
         messages: [
           {
             role: "system",

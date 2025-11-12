@@ -58,7 +58,7 @@ export default function PostExam() {
     }
   }, [viewCourse]);
 
-  // Extract text from PDF using pdfjs-dist
+  // Extract text from PDF using pdfjs-dist with improved structure preservation
   const extractPdfText = async (file: File) => {
     try {
       const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -68,13 +68,39 @@ export default function PostExam() {
       const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
       let fullText = "";
-      const pageCount = Math.min(pdf.numPages, 20); // cap to 20 pages for performance
+      const pageCount = Math.min(pdf.numPages, 20);
+      
       for (let i = 1; i <= pageCount; i++) {
         const page = await pdf.getPage(i);
         const content: any = await page.getTextContent();
-        const pageText = content.items.map((it: any) => (it.str || "")).join(" ");
-        fullText += `\n\n--- Page ${i} ---\n` + pageText;
+        
+        // Preserve structure by tracking vertical positions
+        const textLines: { y: number; text: string }[] = [];
+        let currentLine = { y: 0, text: "" };
+        
+        content.items.forEach((item: any, idx: number) => {
+          const y = item.transform[5];
+          const text = item.str || "";
+          
+          // New line if Y position changed significantly (>5 units)
+          if (idx > 0 && Math.abs(y - currentLine.y) > 5) {
+            if (currentLine.text.trim()) textLines.push({ ...currentLine });
+            currentLine = { y, text };
+          } else {
+            currentLine.y = y;
+            currentLine.text += (currentLine.text ? " " : "") + text;
+          }
+        });
+        
+        if (currentLine.text.trim()) textLines.push(currentLine);
+        
+        // Sort by Y position (top to bottom) and join
+        textLines.sort((a, b) => b.y - a.y);
+        const pageText = textLines.map(line => line.text.trim()).filter(t => t).join("\n");
+        
+        fullText += `\n\n--- Page ${i} ---\n${pageText}`;
       }
+      
       return fullText.trim();
     } catch (e) {
       console.error("PDF extraction failed", e);
@@ -82,7 +108,7 @@ export default function PostExam() {
     }
   };
 
-  // Render up to 3 PDF pages to JPEG data URLs for OCR fallback
+  // Render PDF pages to high-quality JPEG data URLs for OCR
   const renderPdfToImages = async (file: File) => {
     const images: string[] = [];
     try {
@@ -93,16 +119,27 @@ export default function PostExam() {
       const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
       const pageCount = Math.min(pdf.numPages, 5);
+      
       for (let i = 1; i <= pageCount; i++) {
         const page = await pdf.getPage(i);
-        const viewport = page.getViewport({ scale: 2.0 });
+        // Increase scale for better OCR accuracy
+        const viewport = page.getViewport({ scale: 3.0 });
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         if (!ctx) continue;
+        
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        await page.render({ canvasContext: ctx as any, viewport }).promise;
-        images.push(canvas.toDataURL("image/jpeg", 0.92));
+        
+        // Use higher quality rendering
+        await page.render({ 
+          canvasContext: ctx as any, 
+          viewport,
+          intent: 'print' // Use print quality
+        }).promise;
+        
+        // Higher JPEG quality for better OCR
+        images.push(canvas.toDataURL("image/jpeg", 0.98));
       }
     } catch (e) {
       console.error("PDF render to images failed", e);
