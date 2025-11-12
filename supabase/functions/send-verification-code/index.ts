@@ -74,11 +74,22 @@ const handler = async (req: Request): Promise<Response> => {
     });
 
     if (!resendResponse.ok) {
-      const error = await resendResponse.text();
-      console.error("Resend API error:", error);
-      throw new Error("Failed to send verification email");
+      const errorText = await resendResponse.text();
+      console.error("Resend API error:", errorText);
+      let errorJson: any = null;
+      try { errorJson = JSON.parse(errorText); } catch {}
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: "Failed to send verification email",
+          resend_error: errorJson ?? errorText,
+        }),
+        {
+          status: resendResponse.status,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
     }
-
     console.log("Email sent successfully");
 
     return new Response(
