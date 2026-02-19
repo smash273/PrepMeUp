@@ -19,13 +19,10 @@ export default function Auth() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const VIT_EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$/i;
-  const ALLOWED_EXCEPTIONS = ['paladugurajdeep@gmail.com', 'chaparala.haritha@gmail.com'];
   const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
   const isValidEmail = (email: string): boolean => {
-    const normalized = normalizeEmail(email);
-    return VIT_EMAIL_REGEX.test(normalized) || ALLOWED_EXCEPTIONS.includes(normalized);
+    return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email);
   };
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -37,8 +34,8 @@ export default function Auth() {
     if (!isValidEmail(normalizedEmail)) {
       toast({
         variant: "destructive",
-        title: "Invalid email domain",
-        description: "Please use your VIT student email (@vitstudent.ac.in) or authorized email.",
+        title: "Invalid email",
+        description: "Please enter a valid email address.",
       });
       setLoading(false);
       return;
@@ -91,8 +88,8 @@ export default function Auth() {
     if (!isValidEmail(normalizedEmail)) {
       toast({
         variant: "destructive",
-        title: "Invalid email domain",
-        description: "Please use your VIT student email (@vitstudent.ac.in) or authorized email.",
+        title: "Invalid email",
+        description: "Please enter a valid email address.",
       });
       setLoading(false);
       return;
@@ -131,8 +128,8 @@ export default function Auth() {
     if (!isValidEmail(normalizedEmail)) {
       toast({
         variant: "destructive",
-        title: "Invalid email domain",
-        description: "Please use your VIT student email (@vitstudent.ac.in) or authorized email.",
+        title: "Invalid email",
+        description: "Please enter a valid email address.",
       });
       setLoading(false);
       return;
@@ -203,14 +200,9 @@ export default function Auth() {
                 onChange={(e) => setEmail(e.target.value)}
                 onBlur={(e) => setEmail(normalizeEmail(e.target.value))}
                 required
-                placeholder="yourname@vitstudent.ac.in"
-                pattern="^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$"
-                title="Use your VIT student email (…@vitstudent.ac.in)"
+                placeholder="yourname@example.com"
                 autoComplete="email"
               />
-              <p className="text-xs text-muted-foreground">
-                Only VIT student emails are allowed.
-              </p>
             </div>
 
             <div className="space-y-2">
@@ -257,9 +249,7 @@ export default function Auth() {
                 onChange={(e) => setEmail(e.target.value)}
                 onBlur={(e) => setEmail(normalizeEmail(e.target.value))}
                 required
-                placeholder="yourname@vitstudent.ac.in"
-                pattern="^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$"
-                title="Use your VIT student email (…@vitstudent.ac.in)"
+                placeholder="yourname@example.com"
                 autoComplete="email"
               />
             </div>
@@ -304,9 +294,7 @@ export default function Auth() {
                 onChange={(e) => setEmail(e.target.value)}
                 onBlur={(e) => setEmail(normalizeEmail(e.target.value))}
                 required
-                placeholder="yourname@vitstudent.ac.in"
-                pattern="^[A-Za-z0-9._%+-]+@vitstudent\.ac\.in$"
-                title="Use your VIT student email (…@vitstudent.ac.in)"
+                placeholder="yourname@example.com"
                 autoComplete="email"
               />
               <p className="text-xs text-muted-foreground">
