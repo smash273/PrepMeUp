@@ -1,17 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Award } from "lucide-react";
+import { ArrowLeft, Award, Download } from "lucide-react";
 
 export default function Certificate() {
   const { courseId } = useParams();
   const navigate = useNavigate();
+  const certificateRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
   const [courseName, setCourseName] = useState("");
   const [mockTestCount, setMockTestCount] = useState(0);
   const [avgAccuracy, setAvgAccuracy] = useState(0);
+  const [totalCorrect, setTotalCorrect] = useState(0);
+  const [totalQuestions, setTotalQuestions] = useState(0);
 
   useEffect(() => {
     fetchCertificateData();
@@ -24,7 +27,6 @@ export default function Certificate() {
       return;
     }
 
-    // Fetch profile
     const { data: profile } = await supabase
       .from("profiles")
       .select("full_name")
@@ -32,7 +34,6 @@ export default function Certificate() {
       .single();
     setUserName(profile?.full_name || "Student");
 
-    // Fetch course
     const { data: course } = await supabase
       .from("courses")
       .select("name")
@@ -40,7 +41,6 @@ export default function Certificate() {
       .single();
     setCourseName(course?.name || "Unknown Course");
 
-    // Fetch mock papers for this course
     const { data: papers } = await supabase
       .from("mock_papers")
       .select("id")
@@ -49,7 +49,6 @@ export default function Certificate() {
     if (papers && papers.length > 0) {
       const paperIds = papers.map((p) => p.id);
 
-      // Fetch user_test_attempts for these papers
       const { data: attempts } = await supabase
         .from("user_test_attempts")
         .select("mock_paper_id, answers")
@@ -59,7 +58,6 @@ export default function Certificate() {
       if (attempts && attempts.length > 0) {
         setMockTestCount(attempts.length);
 
-        // Get all question IDs from all attempts to fetch correct answers
         const allQuestionIds = new Set<string>();
         for (const attempt of attempts) {
           const answers = attempt.answers as Array<{ question_id: string; user_answer: string }>;
@@ -68,7 +66,6 @@ export default function Certificate() {
           }
         }
 
-        // Fetch correct answers for all questions
         const { data: questions } = await supabase
           .from("questions")
           .select("id, correct_answer, options, question_type")
@@ -77,45 +74,55 @@ export default function Certificate() {
         if (questions) {
           const questionMap = new Map(questions.map((q) => [q.id, q]));
 
-          // Calculate accuracy per attempt then average
-          const accuracies: number[] = [];
+          let correctCount = 0;
+          let questionCount = 0;
+
           for (const attempt of attempts) {
             const answers = attempt.answers as Array<{ question_id: string; user_answer: string }>;
-            if (!Array.isArray(answers) || answers.length === 0) continue;
+            if (!Array.isArray(answers)) continue;
 
-            let correct = 0;
-            let total = 0;
             for (const ans of answers) {
               const question = questionMap.get(ans.question_id);
               if (!question) continue;
-              total++;
+              questionCount++;
 
               if (question.question_type === "mcq" && question.options) {
                 const options = question.options as string[];
                 const correctIdx = parseInt(question.correct_answer || "0");
                 const correctText = options[correctIdx];
                 if (ans.user_answer === correctText || ans.user_answer === question.correct_answer) {
-                  correct++;
+                  correctCount++;
                 }
-              } else {
-                // For long answer, skip accuracy calc or mark as attempted
-                // We can't auto-grade long answers accurately here
               }
-            }
-            if (total > 0) {
-              accuracies.push((correct / total) * 100);
             }
           }
 
-          if (accuracies.length > 0) {
-            const avg = accuracies.reduce((sum, a) => sum + a, 0) / accuracies.length;
-            setAvgAccuracy(Math.round(avg));
+          setTotalCorrect(correctCount);
+          setTotalQuestions(questionCount);
+          if (questionCount > 0) {
+            setAvgAccuracy(Math.round((correctCount / questionCount) * 100));
           }
         }
       }
     }
 
     setLoading(false);
+  };
+
+  const handleDownload = async () => {
+    if (!certificateRef.current) return;
+    
+    const { default: html2canvas } = await import("html2canvas");
+    const canvas = await html2canvas(certificateRef.current, {
+      scale: 2,
+      backgroundColor: null,
+      useCORS: true,
+    });
+    
+    const link = document.createElement("a");
+    link.download = `PrepMeUp_Certificate_${courseName.replace(/\s+/g, "_")}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
   };
 
   const currentDate = new Date().toLocaleDateString("en-US", {
@@ -146,16 +153,19 @@ export default function Certificate() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-purple-950/20 to-background p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <Button variant="ghost" className="mb-6" onClick={() => navigate("/dashboard")}>
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
-        </Button>
+        <div className="flex items-center justify-between mb-6">
+          <Button variant="ghost" onClick={() => navigate("/dashboard")}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
+          </Button>
+          <Button onClick={handleDownload}>
+            <Download className="mr-2 h-4 w-4" /> Download Certificate
+          </Button>
+        </div>
 
-        {/* Certificate */}
         <div
-          id="certificate"
+          ref={certificateRef}
           className="relative bg-card border-4 border-double border-primary/40 rounded-2xl p-8 md:p-16 text-center shadow-2xl"
         >
-          {/* Decorative corners */}
           <div className="absolute top-4 left-4 w-12 h-12 border-t-2 border-l-2 border-primary/30 rounded-tl-lg" />
           <div className="absolute top-4 right-4 w-12 h-12 border-t-2 border-r-2 border-primary/30 rounded-tr-lg" />
           <div className="absolute bottom-4 left-4 w-12 h-12 border-b-2 border-l-2 border-primary/30 rounded-bl-lg" />
@@ -182,11 +192,16 @@ export default function Certificate() {
               {mockTestCount} mock test{mockTestCount > 1 ? "s" : ""}
             </span>{" "}
             in{" "}
-            <span className="font-semibold text-foreground">{courseName}</span>.
+            <span className="font-semibold text-foreground">{courseName}</span>,
+            answering{" "}
+            <span className="font-semibold text-foreground">
+              {totalCorrect} out of {totalQuestions} questions
+            </span>{" "}
+            correctly.
           </p>
 
           <div className="inline-flex items-center gap-2 bg-primary/10 rounded-lg px-6 py-3 mb-6">
-            <span className="text-muted-foreground">Average Accuracy:</span>
+            <span className="text-muted-foreground">Overall Accuracy:</span>
             <span className="text-2xl font-bold text-primary">{avgAccuracy}%</span>
           </div>
 
