@@ -193,17 +193,8 @@ export default function Certificate() {
             </span>{" "}
             in{" "}
             <span className="font-semibold text-foreground">{courseName}</span>,
-            answering{" "}
-            <span className="font-semibold text-foreground">
-              {totalCorrect} out of {totalQuestions} questions
-            </span>{" "}
-            correctly.
           </p>
 
-          <div className="inline-flex items-center gap-2 bg-primary/10 rounded-lg px-6 py-3 mb-6">
-            <span className="text-muted-foreground">Overall Accuracy:</span>
-            <span className="text-2xl font-bold text-primary">{avgAccuracy}%</span>
-          </div>
 
           <div className="flex justify-between items-end mt-8 px-4 md:px-12">
             <div className="text-left">
