@@ -192,7 +192,7 @@ export default function Certificate() {
               {mockTestCount} mock test{mockTestCount > 1 ? "s" : ""}
             </span>{" "}
             in{" "}
-            <span className="font-semibold text-foreground">{courseName}</span>,
+            <span className="font-semibold text-foreground">{courseName}</span>
           </p>
 
 
