@@ -203,7 +203,7 @@ export default function Certificate() {
             </div>
             <div className="text-right">
               <p className="text-sm font-semibold text-foreground border-t border-muted-foreground/30 pt-1 px-4">
-                Rishik Sinha
+                Team PrepMeUp
               </p>
               <p className="text-xs text-muted-foreground">Authorized</p>
             </div>
