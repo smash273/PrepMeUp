@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { BookOpen, FileText, Target, TrendingUp, LogOut } from "lucide-react";
+import { BookOpen, FileText, Target, TrendingUp, LogOut, Award } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import CourseSelector from "@/components/dashboard/CourseSelector";
 
@@ -17,7 +17,7 @@ export default function Dashboard() {
   const [selectorConfig, setSelectorConfig] = useState({
     title: "",
     description: "",
-    action: "" as "study" | "mock" | "post-exam"
+    action: "" as "study" | "mock" | "post-exam" | "certificate"
   });
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -70,7 +70,7 @@ export default function Dashboard() {
     navigate("/");
   };
 
-  const handleCourseAction = (action: "study" | "mock" | "post-exam", title: string, description: string) => {
+  const handleCourseAction = (action: "study" | "mock" | "post-exam" | "certificate", title: string, description: string) => {
     setSelectorConfig({ title, description, action });
     setCourseSelectorOpen(true);
   };
@@ -82,6 +82,8 @@ export default function Dashboard() {
       navigate(`/course/${courseId}?tab=mocks`);
     } else if (selectorConfig.action === "post-exam") {
       navigate("/post-exam");
+    } else if (selectorConfig.action === "certificate") {
+      navigate(`/certificate/${courseId}`);
     }
   };
 
@@ -137,6 +139,14 @@ export default function Dashboard() {
             <h3 className="font-semibold text-lg mb-2">Post-Exam Analysis</h3>
             <p className="text-sm text-muted-foreground">
               Evaluate & improve
+            </p>
+          </Card>
+
+          <Card className="p-6 hover:shadow-glow transition-all cursor-pointer" onClick={() => handleCourseAction("certificate", "Select Course for Certificate", "Choose a course to view your certificate of appreciation")}>
+            <Award className="h-12 w-12 text-primary mb-4" />
+            <h3 className="font-semibold text-lg mb-2">Certification</h3>
+            <p className="text-sm text-muted-foreground">
+              View your certificates
             </p>
           </Card>
         </div>
