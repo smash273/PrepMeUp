@@ -294,8 +294,8 @@ REQUIREMENTS:
 - 10-20 detailed bullet points per module (summary)
 - Colorful mindmaps (4-8 branches with 2-5 subbranches each)
 - Helpful acronyms
-- videoQueries: 3-6 concise YouTube search query strings per module, each targeting a specific subtopic (plain keywords, NOT URLs, e.g. "binary search tree insertion explained")
-- notes: comprehensive markdown study notes (800-1500 words per module) covering every subtopic in depth with explanations, examples, formulas/code blocks where useful, and key takeaways. Use proper markdown headings and lists.
+- videoQueries: 3-6 concise YouTube search query strings per module. CRITICAL: derive each query DIRECTLY from the summary bullets you just wrote — each query must correspond to one or more specific bullets, using their exact concepts/terminology so the videos teach the same material the summary covers. Plain keywords only, NOT URLs (e.g. "binary search tree insertion explained").
+- notes: comprehensive markdown study notes (800-1500 words per module). CRITICAL: these notes must be written as if transcribing and expanding the explanations from the videoQueries above — walk through each video topic in order, give the in-depth explanation a video on that query would cover (definitions, intuition, step-by-step examples, formulas/code, common pitfalls, key takeaways). Use proper markdown headings (one ## per videoQuery), lists, and code blocks.
 
 Return ONLY valid JSON with this shape:
 {
