@@ -388,11 +388,12 @@ let content: any;
     // --- Database Insertion ---
     const rows = [];
     for (const module of content.modules) {
-      // Ensure content fields are present before inserting (avoids null errors)
       rows.push(
         { course_id: courseId, user_id: user.id, module_name: module.name, content_type: "summary", content: module.summary || [] },
         { course_id: courseId, user_id: user.id, module_name: module.name, content_type: "mindmap", content: module.mindmap || {} },
         { course_id: courseId, user_id: user.id, module_name: module.name, content_type: "acronyms", content: module.acronyms || [] },
+        { course_id: courseId, user_id: user.id, module_name: module.name, content_type: "videos", content: { queries: module.videoQueries || [] } },
+        { course_id: courseId, user_id: user.id, module_name: module.name, content_type: "notes", content: { markdown: module.notes || "" } },
       );
     }
 
