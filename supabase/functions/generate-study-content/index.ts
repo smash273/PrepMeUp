@@ -291,24 +291,27 @@ serve(async (req) => {
 
 REQUIREMENTS:
 - Extract actual course modules/topics from the syllabus (NOT PDF structure)
-- Create 10-20 detailed bullet points per module
-- Generate colorful mindmaps (4-8 branches with 2-5 subbranches each)
-- Include helpful acronyms
+- 10-20 detailed bullet points per module (summary)
+- Colorful mindmaps (4-8 branches with 2-5 subbranches each)
+- Helpful acronyms
+- videoQueries: 3-6 concise YouTube search query strings per module, each targeting a specific subtopic (plain keywords, NOT URLs, e.g. "binary search tree insertion explained")
+- notes: comprehensive markdown study notes (800-1500 words per module) covering every subtopic in depth with explanations, examples, formulas/code blocks where useful, and key takeaways. Use proper markdown headings and lists.
 
 Return ONLY valid JSON with this shape:
 {
   "modules": [
     {
       "name": "Module Name from Syllabus",
-      "summary": ["• Detailed point 1", "• Detailed point 2", ...],
+      "summary": ["• Detailed point 1", "• Detailed point 2"],
       "mindmap": {
         "central": "Core Topic",
         "branches": [
-          {"name": "Branch 1", "color": "#FF6B6B", "subbranches": ["Sub 1.1", "Sub 1.2"]},
-          {"name": "Branch 2", "color": "#4ECDC4", "subbranches": ["Sub 2.1", "Sub 2.2"]}
+          {"name": "Branch 1", "color": "#FF6B6B", "subbranches": ["Sub 1.1", "Sub 1.2"]}
         ]
       },
-      "acronyms": [{"acronym": "ABC", "meaning": "Full meaning"}]
+      "acronyms": [{"acronym": "ABC", "meaning": "Full meaning"}],
+      "videoQueries": ["topic 1 tutorial", "topic 2 explained"],
+      "notes": "# Module Title\\n\\nDetailed markdown notes..."
     }
   ]
 }
